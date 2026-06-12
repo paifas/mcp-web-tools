@@ -1,4 +1,4 @@
-import type { SearchResponse, ExtractResponse } from "../types.js";
+import type { SearchResponse, ExtractResponse } from "../../types.js";
 
 /**
  * Formats a SearchResponse into a markdown string suitable for MCP tool output.

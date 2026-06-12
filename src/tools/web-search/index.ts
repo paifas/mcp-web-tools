@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ServerConfig } from "../config.js";
-import { TavilySearchProvider, TavilyError } from "../providers/tavily/tavily-search.js";
-import { log } from "../providers/tavily/tavily-client.js";
-import { formatSearchResponse } from "../utils/format.js";
-import { cacheKey, cacheGet, cacheSet } from "../utils/cache.js";
-import type { SearchResponse } from "../types.js";
+import type { ServerConfig } from "../../config.js";
+import { TavilySearchProvider, TavilyError } from "../../providers/tavily/tavily-search.js";
+import { log } from "../../providers/tavily/client/index.js";
+import { formatSearchResponse } from "../../utils/format/index.js";
+import { cacheKey, cacheGet, cacheSet } from "../../utils/cache/index.js";
+import type { SearchResponse } from "../../types.js";
 
 const webSearchSchema = {
   query: z.string().describe("The search query"),

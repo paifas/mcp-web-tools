@@ -1,6 +1,6 @@
 import type { SearchResponse, ExtractResponse } from "../../types.js";
 import type { SearchProvider, SearchParams, ExtractParams } from "../search-provider.js";
-import { TavilyClient, TavilyError } from "./tavily-client.js";
+import { TavilyClient, TavilyError } from "./client/index.js";
 
 /**
  * Tavily implementation of the SearchProvider interface.

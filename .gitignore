@@ -6,3 +6,4 @@ build/
 CLAUDE.md
 .claude/
 todos.md
+coverage/
