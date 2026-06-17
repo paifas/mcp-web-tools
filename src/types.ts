@@ -27,3 +27,14 @@ export interface ExtractResponse {
   failedResults: { url: string; error: string }[];
   responseTime?: number;
 }
+
+/** Normalized usage/balance response */
+export interface UsageResponse {
+  provider: string;
+  plan?: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  /** Named breakdown buckets, e.g. { search: 27, extract: 6 } */
+  breakdown: Record<string, number>;
+}

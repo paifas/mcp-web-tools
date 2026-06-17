@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerConfig } from "../../config.js";
-import { TavilySearchProvider, TavilyError } from "../../providers/tavily/tavily-search.js";
+import type { SearchProvider } from "../../providers/search-provider.js";
+import { TavilyError } from "../../providers/tavily/tavily-search.js";
 import { log } from "../../providers/tavily/client/index.js";
 import { formatSearchResponse } from "../../utils/format/index.js";
 import { cacheKey, cacheGet, cacheSet } from "../../utils/cache/index.js";
@@ -31,9 +32,7 @@ const webSearchSchema = {
   includeAnswer: z.boolean().optional().describe("Include an AI-generated answer (default: true)"),
 };
 
-export function registerWebSearchTool(server: McpServer, config: ServerConfig) {
-  const provider = new TavilySearchProvider(config.tavilyApiKey);
-
+export function registerWebSearchTool(server: McpServer, config: ServerConfig, provider: SearchProvider) {
   server.tool(
     "web_search",
     "Search the web using Tavily. Returns results with titles, URLs, and snippets. Supports filtering by domain, topic, time range, and search depth.",

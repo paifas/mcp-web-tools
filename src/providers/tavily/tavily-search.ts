@@ -1,4 +1,4 @@
-import type { SearchResponse, ExtractResponse } from "../../types.js";
+import type { SearchResponse, ExtractResponse, UsageResponse } from "../../types.js";
 import type { SearchProvider, SearchParams, ExtractParams } from "../search-provider.js";
 import { TavilyClient, TavilyError } from "./client/index.js";
 
@@ -58,6 +58,26 @@ export class TavilySearchProvider implements SearchProvider {
         error: f.error,
       })),
       responseTime: response.response_time,
+    };
+  }
+
+  async getUsage(): Promise<UsageResponse> {
+    const usage = await this.client.getUsage();
+    const used = usage.account.plan_usage;
+    const limit = usage.account.plan_limit;
+    return {
+      provider: this.name,
+      plan: usage.account.current_plan,
+      used,
+      limit,
+      remaining: limit - used,
+      breakdown: {
+        search: usage.account.search_usage,
+        extract: usage.account.extract_usage,
+        crawl: usage.account.crawl_usage,
+        map: usage.account.map_usage,
+        research: usage.account.research_usage,
+      },
     };
   }
 }

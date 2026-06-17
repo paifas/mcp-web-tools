@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerConfig } from "../../config.js";
-import { TavilySearchProvider, TavilyError } from "../../providers/tavily/tavily-search.js";
+import type { SearchProvider } from "../../providers/search-provider.js";
+import { TavilyError } from "../../providers/tavily/tavily-search.js";
 import { log } from "../../providers/tavily/client/index.js";
 import { formatExtractResponse } from "../../utils/format/index.js";
 import { cacheKey, cacheGet, cacheSet } from "../../utils/cache/index.js";
@@ -18,9 +19,7 @@ const webReaderSchema = {
   includeImages: z.boolean().optional().describe("Include extracted image URLs (default: false)"),
 };
 
-export function registerWebReaderTool(server: McpServer, config: ServerConfig) {
-  const provider = new TavilySearchProvider(config.tavilyApiKey);
-
+export function registerWebReaderTool(server: McpServer, config: ServerConfig, provider: SearchProvider) {
   server.tool(
     "web_read",
     "Extract clean content from web pages. Returns page text stripped of navigation, ads, and scripts. Supports up to 20 URLs per request.",
