@@ -1,4 +1,4 @@
-# mcp-dicode
+# mcp-web-tools
 
 MCP server providing web search tools for AI assistants, powered by [Tavily](https://tavily.com).
 
@@ -9,7 +9,7 @@ You need a [Tavily API key](https://tavily.com) (free tier available).
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add mcp-dicode -e TAVILY_API_KEY=your-api-key -- npx -y mcp-dicode
+claude mcp add mcp-web-tools -e TAVILY_API_KEY=your-api-key -- npx -y mcp-web-tools
 ```
 
 ### Claude Desktop
@@ -19,9 +19,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ```json
 {
   "mcpServers": {
-    "mcp-dicode": {
+    "mcp-web-tools": {
       "command": "npx",
-      "args": ["-y", "mcp-dicode"],
+      "args": ["-y", "mcp-web-tools"],
       "env": {
         "TAVILY_API_KEY": "your-api-key"
       }
@@ -35,9 +35,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 Add to `~/.config/opencode/opencode.json` (global) or `.opencode.json` in your project root:
 
 ```jsonc
-"mcp-dicode": {
+"mcp-web-tools": {
   "type": "local",
-  "command": ["npx", "-y", "mcp-dicode"],
+  "command": ["npx", "-y", "mcp-web-tools"],
   "environment": {
     "TAVILY_API_KEY": "your-api-key"
   }
@@ -74,10 +74,10 @@ Check your Tavily API credit balance and usage.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TAVILY_API_KEY` | Yes | — | Your Tavily API key. Get one at [tavily.com](https://tavily.com) |
-| `DICODE_MAX_RESULTS` | No | `5` | Default number of results |
-| `DICODE_SEARCH_DEPTH` | No | `basic` | Default search depth |
-| `DICODE_CACHE_TTL` | No | `3600` | Cache TTL in seconds (0 to disable) |
-| `DICODE_DEBUG` | No | — | Set to any value to enable debug logging to stderr |
+| `WEBTOOLS_MAX_RESULTS` | No | `5` | Default number of results |
+| `WEBTOOLS_SEARCH_DEPTH` | No | `basic` | Default search depth |
+| `WEBTOOLS_CACHE_TTL` | No | `3600` | Cache TTL in seconds (0 to disable) |
+| `WEBTOOLS_DEBUG` | No | — | Set to any value to enable debug logging to stderr |
 
 ## Example Output
 

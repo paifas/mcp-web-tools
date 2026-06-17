@@ -28,22 +28,22 @@ export function loadConfig(): ServerConfig {
     throw new Error("TAVILY_API_KEY environment variable is required. Get one at https://tavily.com");
   }
 
-  const defaultMaxResults = parseInt(process.env.DICODE_MAX_RESULTS ?? "5", 10);
+  const defaultMaxResults = parseInt(process.env.WEBTOOLS_MAX_RESULTS ?? "5", 10);
   if (Number.isNaN(defaultMaxResults) || defaultMaxResults < 1) {
     throw new Error(
-      `Invalid DICODE_MAX_RESULTS value: "${process.env.DICODE_MAX_RESULTS}". Must be a positive integer.`,
+      `Invalid WEBTOOLS_MAX_RESULTS value: "${process.env.WEBTOOLS_MAX_RESULTS}". Must be a positive integer.`,
     );
   }
-  const defaultSearchDepth = (process.env.DICODE_SEARCH_DEPTH ?? "basic") as
+  const defaultSearchDepth = (process.env.WEBTOOLS_SEARCH_DEPTH ?? "basic") as
     | "advanced"
     | "basic"
     | "fast"
     | "ultra-fast";
 
-  const cacheTtl = parseInt(process.env.DICODE_CACHE_TTL ?? "3600", 10);
+  const cacheTtl = parseInt(process.env.WEBTOOLS_CACHE_TTL ?? "3600", 10);
   if (Number.isNaN(cacheTtl) || cacheTtl < 0) {
     throw new Error(
-      `Invalid DICODE_CACHE_TTL value: "${process.env.DICODE_CACHE_TTL}". Must be a non-negative integer (seconds).`,
+      `Invalid WEBTOOLS_CACHE_TTL value: "${process.env.WEBTOOLS_CACHE_TTL}". Must be a non-negative integer (seconds).`,
     );
   }
 
@@ -52,7 +52,7 @@ export function loadConfig(): ServerConfig {
     defaultMaxResults,
     defaultSearchDepth,
     cacheTtl,
-    serverName: "mcp-dicode",
+    serverName: "mcp-web-tools",
     serverVersion: getPackageVersion(),
   };
 }

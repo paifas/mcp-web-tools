@@ -207,10 +207,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Debug logger -- outputs to stderr when DICODE_DEBUG is set */
+/** Debug logger -- outputs to stderr when WEBTOOLS_DEBUG is set */
 export function log(message: string): void {
-  if (process.env.DICODE_DEBUG) {
+  if (process.env.WEBTOOLS_DEBUG) {
     const ts = new Date().toISOString().slice(11, 19);
-    process.stderr.write(`[dicode ${ts}] ${message}\n`);
+    process.stderr.write(`[webtools ${ts}] ${message}\n`);
   }
 }

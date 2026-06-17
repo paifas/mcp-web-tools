@@ -1,11 +1,11 @@
 {
-  "name": "mcp-dicode",
+  "name": "mcp-web-tools",
   "version": "0.2.6",
   "description": "MCP server providing web search tools for AI assistants",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "mcp-dicode": "./build/index.js"
+    "mcp-web-tools": "./build/index.js"
   },
   "files": [
     "build",
@@ -27,11 +27,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/paifas/mcp-dicode.git"
+    "url": "git+https://github.com/paifas/mcp-web-tools.git"
   },
-  "homepage": "https://github.com/paifas/mcp-dicode#readme",
+  "homepage": "https://github.com/paifas/mcp-web-tools#readme",
   "bugs": {
-    "url": "https://github.com/paifas/mcp-dicode/issues"
+    "url": "https://github.com/paifas/mcp-web-tools/issues"
   },
   "keywords": [
     "mcp",
