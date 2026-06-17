@@ -68,11 +68,32 @@ export FIRECRAWL_URL=https://firecrawl.your-corp.internal:3002
 
 ### Register with your client
 
-**Claude Code (CLI):**
+**Claude Code (CLI):** pass `-e KEY=VALUE` flags for each env var. A few common combinations:
 
 ```bash
+# Zero-cost stack (default) — local SearXNG + Firecrawl keyless
 claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -- npx -y mcp-web-tools
+
+# Public SearXNG instance, no Docker
+claude mcp add mcp-web-tools -e SEARXNG_URL=https://search.mdosch.de -- npx -y mcp-web-tools
+
+# Fully self-hosted (SearXNG + Firecrawl local via docker compose --profile full)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_URL=http://localhost:3002 -- npx -y mcp-web-tools
+
+# SearXNG search + Tavily extract (reuse a Tavily key)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
+
+# SearXNG search only, web_read disabled
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=none -- npx -y mcp-web-tools
+
+# Firecrawl keyed (higher limits on hosted)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_API_KEY=fc-your-key -- npx -y mcp-web-tools
+
+# Tavily for both (single key, the original path)
+claude mcp add mcp-web-tools -e WEBTOOLS_SEARCH_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
 ```
+
+Tip: `claude mcp add` also accepts `-s user` to install at user scope (available in all projects) or `-s project` for a shared `.mcp.json`.
 
 **Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 

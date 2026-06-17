@@ -1,6 +1,6 @@
 {
   "name": "mcp-web-tools",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "MCP server providing web search tools for AI assistants",
   "type": "module",
   "main": "build/index.js",
