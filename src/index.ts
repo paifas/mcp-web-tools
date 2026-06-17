@@ -8,6 +8,7 @@ import { cacheConfigure } from "./utils/cache/index.js";
 import { registerWebSearchTool } from "./tools/web-search/index.js";
 import { registerWebReaderTool } from "./tools/web-reader/index.js";
 import { registerCreditBalanceTool } from "./tools/credit-balance/index.js";
+import { registerGithubTools } from "./tools/github/index.js";
 
 async function main() {
   const config = loadConfig();
@@ -25,6 +26,7 @@ async function main() {
   registerWebSearchTool(server, config, provider);
   registerWebReaderTool(server, config, provider);
   registerCreditBalanceTool(server, config, provider);
+  registerGithubTools(server, config);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -81,11 +81,40 @@ Extract clean content from web pages via the Tavily Extract API. Returns page te
 
 Check your Tavily API credit balance and usage.
 
+## GitHub Tools
+
+Two tools for reading public GitHub repository content directly via the GitHub REST API. These do not go through the search provider — they live in their own namespace and work anonymously.
+
+### `github_get_repo_structure`
+
+List the directory structure of a GitHub repository path (single level, non-recursive). Useful for understanding project layout.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `repo` | string | *required* | Repository in the form `owner/repo` (e.g. `vitejs/vite`) |
+| `path` | string | `/` | Directory path inside the repo |
+| `ref` | string | default branch | Git ref (branch, tag, or commit SHA) |
+
+### `github_read_file`
+
+Read the full content of a file in a GitHub repository. Files larger than 512 KB or detected as binary are rejected.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `repo` | string | *required* | Repository in the form `owner/repo` |
+| `path` | string | *required* | Path to the file inside the repo |
+| `ref` | string | default branch | Git ref (branch, tag, or commit SHA) |
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TAVILY_API_KEY` | Yes\* | — | Your Tavily API key. Required when `WEBTOOLS_SEARCH_PROVIDER=tavily`. Get one at [tavily.com](https://tavily.com) |
+| `GITHUB_TOKEN` | No | — | Optional GitHub token for the `github_*` tools. Lifts rate limits from 60 to 5000 requests/hour. Create one at [github.com/settings/tokens](https://github.com/settings/tokens) (no scopes needed for public repos) |
 | `WEBTOOLS_SEARCH_PROVIDER` | No | `tavily` | Provider selection: `tavily` or `searxng` |
 | `SEARXNG_URL` | Conditional | — | Base URL of a SearXNG instance. Required when `WEBTOOLS_SEARCH_PROVIDER=searxng` |
 | `WEBTOOLS_MAX_RESULTS` | No | `5` | Default number of results (must be 1–20) |

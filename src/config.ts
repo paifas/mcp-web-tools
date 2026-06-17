@@ -26,6 +26,8 @@ export interface ServerConfig {
   tavilyApiKey?: string;
   /** Required when searchProvider = "searxng". */
   searxngUrl?: string;
+  /** Optional GitHub token to lift rate limits (60/hr → 5000/hr) for github_* tools. */
+  githubToken?: string;
   defaultMaxResults: number;
   defaultSearchDepth: "advanced" | "basic" | "fast" | "ultra-fast";
   cacheTtl: number;
@@ -95,6 +97,7 @@ export function loadConfig(): ServerConfig {
     searchProvider,
     tavilyApiKey,
     searxngUrl,
+    githubToken: process.env.GITHUB_TOKEN,
     defaultMaxResults,
     defaultSearchDepth,
     cacheTtl,
