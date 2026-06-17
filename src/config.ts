@@ -17,6 +17,9 @@ function getPackageVersion(): string {
 const SUPPORTED_PROVIDERS = ["tavily", "searxng"] as const;
 export type ProviderName = (typeof SUPPORTED_PROVIDERS)[number];
 
+/** Upper bound for the per-call maxResults zod schema (kept in sync with web-search tool). */
+const MAX_RESULTS_LIMIT = 20;
+
 export interface ServerConfig {
   searchProvider: ProviderName;
   /** Required when searchProvider = "tavily". */
@@ -26,8 +29,18 @@ export interface ServerConfig {
   defaultMaxResults: number;
   defaultSearchDepth: "advanced" | "basic" | "fast" | "ultra-fast";
   cacheTtl: number;
+  cacheMaxEntries: number;
+  cacheSweepIntervalMs: number;
   serverName: string;
   serverVersion: string;
+}
+
+function parseNonNegInt(value: string | undefined, fallback: number, label: string): number {
+  const parsed = parseInt(value ?? String(fallback), 10);
+  if (Number.isNaN(parsed) || parsed < 0 || !Number.isFinite(parsed)) {
+    throw new Error(`Invalid ${label}: "${value}". Must be a non-negative integer.`);
+  }
+  return parsed;
 }
 
 export function loadConfig(): ServerConfig {
@@ -58,6 +71,11 @@ export function loadConfig(): ServerConfig {
       `Invalid WEBTOOLS_MAX_RESULTS value: "${process.env.WEBTOOLS_MAX_RESULTS}". Must be a positive integer.`,
     );
   }
+  if (defaultMaxResults > MAX_RESULTS_LIMIT) {
+    throw new Error(
+      `Invalid WEBTOOLS_MAX_RESULTS value: "${process.env.WEBTOOLS_MAX_RESULTS}". Must be <= ${MAX_RESULTS_LIMIT} (matches the per-call zod schema).`,
+    );
+  }
 
   const defaultSearchDepth = (process.env.WEBTOOLS_SEARCH_DEPTH ?? "basic") as
     | "advanced"
@@ -65,12 +83,13 @@ export function loadConfig(): ServerConfig {
     | "fast"
     | "ultra-fast";
 
-  const cacheTtl = parseInt(process.env.WEBTOOLS_CACHE_TTL ?? "3600", 10);
-  if (Number.isNaN(cacheTtl) || cacheTtl < 0) {
-    throw new Error(
-      `Invalid WEBTOOLS_CACHE_TTL value: "${process.env.WEBTOOLS_CACHE_TTL}". Must be a non-negative integer (seconds).`,
-    );
-  }
+  const cacheTtl = parseNonNegInt(process.env.WEBTOOLS_CACHE_TTL, 3600, "WEBTOOLS_CACHE_TTL");
+  const cacheMaxEntries = parseNonNegInt(process.env.WEBTOOLS_CACHE_MAX_ENTRIES, 100, "WEBTOOLS_CACHE_MAX_ENTRIES");
+  const cacheSweepIntervalMs = parseNonNegInt(
+    process.env.WEBTOOLS_CACHE_SWEEP_INTERVAL_MS,
+    5 * 60 * 1000,
+    "WEBTOOLS_CACHE_SWEEP_INTERVAL_MS",
+  );
 
   return {
     searchProvider,
@@ -79,6 +98,8 @@ export function loadConfig(): ServerConfig {
     defaultMaxResults,
     defaultSearchDepth,
     cacheTtl,
+    cacheMaxEntries,
+    cacheSweepIntervalMs,
     serverName: "mcp-web-tools",
     serverVersion: getPackageVersion(),
   };

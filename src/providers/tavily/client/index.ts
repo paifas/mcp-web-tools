@@ -84,13 +84,25 @@ export interface TavilyUsageResponse {
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const JITTER_FACTOR = 0.25;
 
 function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+/** ±JITTER_FACTOR jitter on a base delay to desynchronize concurrent retries. */
+function jitter(baseMs: number): number {
+  const factor = 1 + (Math.random() * 2 - 1) * JITTER_FACTOR; // 0.75..1.25
+  return Math.round(baseMs * factor);
+}
+
+interface RequestOptions {
+  method?: "GET" | "POST";
+  body?: unknown;
+}
+
 /**
- * Low-level HTTP client for the Tavily Search API.
+ * Low-level HTTP client for the Tavily API.
  */
 export class TavilyClient {
   private readonly baseUrl = "https://api.tavily.com";
@@ -102,12 +114,14 @@ export class TavilyClient {
     this.timeout = timeout;
   }
 
-  private async request<T>(endpoint: string, body: unknown): Promise<T> {
+  private async request<T>(endpoint: string, opts: RequestOptions = {}): Promise<T> {
+    const method = opts.method ?? "POST";
     let lastError: TavilyError | undefined;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const base = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const delay = jitter(base);
         log(`retry ${attempt}/${MAX_RETRIES} after ${delay}ms`);
         await sleep(delay);
       }
@@ -116,13 +130,16 @@ export class TavilyClient {
       const timer = setTimeout(() => controller.abort(), this.timeout);
 
       try {
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${this.apiKey}`,
+        };
+        if (method === "POST") {
+          headers["Content-Type"] = "application/json";
+        }
         const response = await fetch(`${this.baseUrl}${endpoint}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify(body),
+          method,
+          headers,
+          body: method === "POST" ? JSON.stringify(opts.body) : undefined,
           signal: controller.signal,
         });
 
@@ -168,38 +185,15 @@ export class TavilyClient {
   }
 
   async search(params: TavilySearchParams): Promise<TavilySearchResponse> {
-    return this.request<TavilySearchResponse>("/search", params);
+    return this.request<TavilySearchResponse>("/search", { method: "POST", body: params });
   }
 
   async extract(params: TavilyExtractParams): Promise<TavilyExtractResponse> {
-    return this.request<TavilyExtractResponse>("/extract", params);
+    return this.request<TavilyExtractResponse>("/extract", { method: "POST", body: params });
   }
 
   async getUsage(): Promise<TavilyUsageResponse> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeout);
-
-    try {
-      const response = await fetch(`${this.baseUrl}/usage`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new TavilyError(`Failed to fetch usage (${response.status}): ${text}`, response.status);
-      }
-
-      return (await response.json()) as TavilyUsageResponse;
-    } catch (error) {
-      if (error instanceof TavilyError) throw error;
-      throw new TavilyError(`Failed to fetch usage: ${error instanceof Error ? error.message : String(error)}`, 500);
-    } finally {
-      clearTimeout(timer);
-    }
+    return this.request<TavilyUsageResponse>("/usage", { method: "GET" });
   }
 }
 

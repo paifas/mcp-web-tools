@@ -4,12 +4,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
 import { createProvider } from "./providers/registry.js";
+import { cacheConfigure } from "./utils/cache/index.js";
 import { registerWebSearchTool } from "./tools/web-search/index.js";
 import { registerWebReaderTool } from "./tools/web-reader/index.js";
 import { registerCreditBalanceTool } from "./tools/credit-balance/index.js";
 
 async function main() {
   const config = loadConfig();
+  cacheConfigure({
+    maxEntries: config.cacheMaxEntries,
+    sweepIntervalMs: config.cacheSweepIntervalMs,
+  });
   const provider = createProvider(config);
 
   const server = new McpServer({
