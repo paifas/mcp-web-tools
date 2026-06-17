@@ -53,12 +53,27 @@ The server talks to two independent backends, configured via env vars in your cl
 
 Point `SEARXNG_URL` at any SearXNG instance. Three options:
 
-**Run locally** (recommended; you control availability):
+**Run locally** (recommended; you control availability). SearXNG needs JSON output enabled and the rate limiter disabled — the bundled image doesn't do this by default, so write a small settings file and mount it:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
-# then set SEARXNG_URL=http://localhost:8080 in your client config
+mkdir -p ~/.mcp-web-tools && cat > ~/.mcp-web-tools/searxng.yml << 'EOF'
+use_default_settings: true
+server:
+  limiter: false
+  secret_key: "change-me"
+search:
+  formats: [html, json]
+EOF
+
+docker run -d --name mcp-searxng -p 8080:8080 \
+  -v ~/.mcp-web-tools/searxng.yml:/etc/searxng/settings.yml:ro \
+  --restart unless-stopped \
+  searxng/searxng:latest
 ```
+
+Then set `SEARXNG_URL=http://localhost:8080` in your client config.
+
+> If you've cloned this repo, the same thing works via `docker compose -f docker/docker-compose.yml up -d` (the settings file is bundled).
 
 **Use a public instance** (no Docker, but you depend on a third party):
 
@@ -130,8 +145,22 @@ Tip: `claude mcp add` also accepts `-s user` (available in all projects) or `-s 
 
 ~14 GB RAM, multiple containers. Brings up SearXNG plus Firecrawl's scrape stack (API + Playwright + Redis) so the entire server runs without external network calls. Sufficient for `web_read`; for full Firecrawl parity (crawl queue, extraction history) see [Firecrawl's SELF_HOST.md](https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md).
 
+The Firecrawl stack uses multiple linked services, so this path uses the bundled compose file. Get it one of two ways:
+
+**Option A — clone the repo:**
+
 ```bash
+git clone https://github.com/paifas/mcp-web-tools.git && cd mcp-web-tools
 docker compose -f docker/docker-compose.yml --profile full up -d
+```
+
+**Option B — download just the compose + settings files:**
+
+```bash
+mkdir -p mcp-self-host && cd mcp-self-host
+curl -fLO https://raw.githubusercontent.com/paifas/mcp-web-tools/main/docker/docker-compose.yml
+curl -fLO https://raw.githubusercontent.com/paifas/mcp-web-tools/main/docker/searxng-settings.yml
+docker compose --profile full up -d
 ```
 
 Then point the server at both local endpoints:
