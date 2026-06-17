@@ -35,7 +35,7 @@ const webSearchSchema = {
 export function registerWebSearchTool(server: McpServer, config: ServerConfig, provider: SearchProvider) {
   server.tool(
     "web_search",
-    "Search the web using Tavily. Returns results with titles, URLs, and snippets. Supports filtering by domain, topic, time range, and search depth.",
+    "Search the web. Returns results with titles, URLs, and snippets. Supports filtering by domain, topic, time range, and search depth. Provider is configured server-side (Tavily or SearXNG).",
     webSearchSchema,
     async (params) => {
       try {

@@ -1,20 +1,80 @@
 # mcp-web-tools
 
-MCP server providing web search tools for AI assistants, powered by [Tavily](https://tavily.com).
+MCP server providing web search and content extraction tools for AI assistants. Search and extract backends are decoupled — pick any combination of [Tavily](https://tavily.com) (hosted), [SearXNG](https://searxng.org) (self-hostable meta-search), and [Firecrawl](https://firecrawl.dev) (hosted or self-hosted extraction). The zero-config default runs entirely without API keys (SearXNG search + Firecrawl keyless extract).
 
 ## Setup
 
-You need a [Tavily API key](https://tavily.com) (free tier available).
+Pick a stack below, then register the server with your client (examples at the end of this section).
 
-### Claude Code (CLI)
+### 1. Zero-cost stack (default)
+
+The default uses **SearXNG for search** and **Firecrawl keyless for extract** — no API keys, no account. You only need to point at a SearXNG instance.
+
+**Option A — local SearXNG container** (recommended; you control availability):
 
 ```bash
-claude mcp add mcp-web-tools -e TAVILY_API_KEY=your-api-key -- npx -y mcp-web-tools
+docker compose -f docker/docker-compose.yml up -d
+export SEARXNG_URL=http://localhost:8080
 ```
 
-### Claude Desktop
+**Option B — public SearXNG instance** (no Docker, but you depend on a third party):
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+```bash
+export SEARXNG_URL=https://search.mdosch.de
+```
+
+> ⚠️ Public SearXNG instances are operated by volunteers and may be rate-limited, intermittently unavailable, or have JSON output disabled. A commonly available one is `https://search.mdosch.de`, but **this project does not control its availability**. For production use, run your own (Option A) or use Tavily.
+
+With `SEARXNG_URL` set, no other env vars are required — Firecrawl keyless extract works with no key.
+
+### 2. Tavily hosted (single key, both tools)
+
+```bash
+export TAVILY_API_KEY=your-api-key
+export WEBTOOLS_SEARCH_PROVIDER=tavily
+```
+
+Extract automatically defaults to Tavily (key reuse).
+
+### 3. Full self-host (SearXNG + Firecrawl local)
+
+~14 GB RAM, multiple containers. Brings up Firecrawl's scrape stack (API + Playwright + Redis) behind a compose profile. Sufficient for `web_read`; for full Firecrawl parity (crawl queue, extraction history) see [Firecrawl's SELF_HOST.md](https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md).
+
+```bash
+docker compose -f docker/docker-compose.yml --profile full up -d
+export SEARXNG_URL=http://localhost:8080
+export FIRECRAWL_URL=http://localhost:3002
+```
+
+### 4. Remote / mixed instances
+
+Any HTTP(S) URL works for either provider — point at a team-shared server, a cloud VM, or any public instance:
+
+```bash
+export WEBTOOLS_SEARCH_PROVIDER=searxng
+export SEARXNG_URL=https://search.your-corp.internal
+export FIRECRAWL_URL=https://firecrawl.your-corp.internal:3002
+```
+
+### Provider matrix
+
+| Search | Extract | What you set |
+|---|---|---|
+| SearXNG (default) | Firecrawl keyless (default) | `SEARXNG_URL` only |
+| SearXNG | Firecrawl keyed | `SEARXNG_URL` + `FIRECRAWL_API_KEY` |
+| SearXNG | Tavily | `SEARXNG_URL` + `TAVILY_API_KEY` + `WEBTOOLS_EXTRACT_PROVIDER=tavily` |
+| SearXNG | none (`web_read` disabled) | `SEARXNG_URL` + `WEBTOOLS_EXTRACT_PROVIDER=none` |
+| Tavily | Tavily | `TAVILY_API_KEY` + `WEBTOOLS_SEARCH_PROVIDER=tavily` |
+
+### Register with your client
+
+**Claude Code (CLI):**
+
+```bash
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -- npx -y mcp-web-tools
+```
+
+**Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -23,23 +83,21 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "npx",
       "args": ["-y", "mcp-web-tools"],
       "env": {
-        "TAVILY_API_KEY": "your-api-key"
+        "SEARXNG_URL": "http://localhost:8080"
       }
     }
   }
 }
 ```
 
-### OpenCode
-
-Add to `~/.config/opencode/opencode.json` (global) or `.opencode.json` in your project root:
+**OpenCode** — add to `~/.config/opencode/opencode.json` (global) or `.opencode.json` in your project root:
 
 ```jsonc
 "mcp-web-tools": {
   "type": "local",
   "command": ["npx", "-y", "mcp-web-tools"],
   "environment": {
-    "TAVILY_API_KEY": "your-api-key"
+    "SEARXNG_URL": "http://localhost:8080"
   }
 }
 ```
@@ -48,7 +106,7 @@ Add to `~/.config/opencode/opencode.json` (global) or `.opencode.json` in your p
 
 ### `web_search`
 
-Search the web using Tavily. Returns results with titles, URLs, and snippets.
+Search the web. Returns results with titles, URLs, and snippets. Backend is configured server-side (Tavily or SearXNG).
 
 **Parameters:**
 
@@ -67,7 +125,7 @@ Search the web using Tavily. Returns results with titles, URLs, and snippets.
 
 ### `web_read`
 
-Extract clean content from web pages via the Tavily Extract API. Returns page text stripped of navigation, ads, and scripts. Supports up to 20 URLs per request.
+Extract clean content from web pages. Returns page text stripped of navigation, ads, and scripts. Supports up to 20 URLs per request. Backend is configured server-side (Tavily or Firecrawl). Not registered when `WEBTOOLS_EXTRACT_PROVIDER=none`.
 
 **Parameters:**
 
@@ -79,7 +137,7 @@ Extract clean content from web pages via the Tavily Extract API. Returns page te
 
 ### `credit_balance`
 
-Check your Tavily API credit balance and usage.
+Check your provider credit balance and usage. Returns "not supported" when the active provider has no credit system (e.g. SearXNG).
 
 ## GitHub Tools
 
@@ -127,10 +185,13 @@ Search a GitHub repository across code, issues, and pull requests in one call. W
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `TAVILY_API_KEY` | Yes\* | — | Your Tavily API key. Required when `WEBTOOLS_SEARCH_PROVIDER=tavily`. Get one at [tavily.com](https://tavily.com) |
+| `WEBTOOLS_SEARCH_PROVIDER` | No | `searxng` | Search backend: `tavily` or `searxng` |
+| `SEARXNG_URL` | Conditional | — | Base URL of a SearXNG instance (e.g. `http://localhost:8080`, `https://search.mdosch.de`). Required when search provider is `searxng` |
+| `TAVILY_API_KEY` | Conditional | — | Tavily API key. Required when search or extract provider is `tavily`. Get one at [tavily.com](https://tavily.com) |
+| `WEBTOOLS_EXTRACT_PROVIDER` | No | derived\* | Extract backend: `tavily`, `firecrawl`, or `none`. When unset: `tavily` if search is tavily, otherwise `firecrawl` |
+| `FIRECRAWL_URL` | No | `https://api.firecrawl.dev` | Base URL of a Firecrawl instance. Accepts any HTTP(S) URL (local, hosted, or self-hosted) |
+| `FIRECRAWL_API_KEY` | No | — | Optional. Omit for keyless mode (~1000 credits/month, IP-bucketed). Set for higher hosted limits. Ignored on self-hosted bypass mode |
 | `GITHUB_TOKEN` | No | — | Optional GitHub token for the `github_*` tools. Lifts rate limits from 60 to 5000 requests/hour. Create one at [github.com/settings/tokens](https://github.com/settings/tokens) (no scopes needed for public repos) |
-| `WEBTOOLS_SEARCH_PROVIDER` | No | `tavily` | Provider selection: `tavily` or `searxng` |
-| `SEARXNG_URL` | Conditional | — | Base URL of a SearXNG instance. Required when `WEBTOOLS_SEARCH_PROVIDER=searxng` |
 | `WEBTOOLS_MAX_RESULTS` | No | `5` | Default number of results (must be 1–20) |
 | `WEBTOOLS_SEARCH_DEPTH` | No | `basic` | Default search depth |
 | `WEBTOOLS_CACHE_TTL` | No | `3600` | Cache TTL in seconds (0 disables) |
@@ -138,7 +199,28 @@ Search a GitHub repository across code, issues, and pull requests in one call. W
 | `WEBTOOLS_CACHE_SWEEP_INTERVAL_MS` | No | `300000` | Interval in ms to sweep expired entries (0 disables periodic sweep) |
 | `WEBTOOLS_DEBUG` | No | — | Set to any value to enable debug logging to stderr |
 
-\* Required only when using the Tavily provider (the default).
+\* `WEBTOOLS_EXTRACT_PROVIDER` defaults to `tavily` when `WEBTOOLS_SEARCH_PROVIDER=tavily`, and to `firecrawl` otherwise.
+
+## Provider limitations
+
+Each backend supports a different subset of features. Unsupported params are silently ignored.
+
+| Feature | Tavily | SearXNG | Firecrawl |
+|---|---|---|---|
+| `web_search` | ✅ | ✅ | — (extract only) |
+| `web_read` / extract | ✅ | — (search only) | ✅ |
+| AI answer (`includeAnswer`) | ✅ | ❌ ignored | — |
+| Native domain filter | ✅ | post-filtered (may return fewer than `maxResults`) | — |
+| `topic=finance` | ✅ | maps to `general` | — |
+| `searchDepth` | ✅ | ❌ ignored | — |
+| `extractDepth=advanced` | ✅ | — | ✅ (maps to `onlyMainContent`) |
+| `includeImages` | ✅ | — | ❌ ignored |
+| Credit/usage (`credit_balance`) | ✅ | ❌ "not supported" | ❌ "not supported" |
+
+**Common pitfalls:**
+- **SearXNG 403** — JSON output is disabled on the instance. Edit `settings.yml` (`search.formats` must include `json`) and restart. The included `docker/searxng-settings.yml` has this enabled.
+- **SearXNG 429** — rate limiter is on. Disable `server.limiter` in `settings.yml`, or use a different instance.
+- **Firecrawl 429** — keyless free tier exhausted (~1000 credits/month, 10/min). Set `FIRECRAWL_API_KEY` for higher limits, or self-host.
 
 ## Example Output
 

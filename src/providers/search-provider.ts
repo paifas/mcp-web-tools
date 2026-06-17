@@ -1,4 +1,4 @@
-import type { SearchResponse, ExtractResponse, UsageResponse } from "../types.js";
+import type { SearchResponse, UsageResponse } from "../types.js";
 
 /** Parameters common to all search providers */
 export interface SearchParams {
@@ -14,23 +14,15 @@ export interface SearchParams {
   includeAnswer?: boolean;
 }
 
-/** Parameters for extract providers */
-export interface ExtractParams {
-  urls: string[];
-  extractDepth?: "basic" | "advanced";
-  includeImages?: boolean;
-}
-
 /**
  * Interface that every search provider must implement.
- * Tavily is the first; Brave, SearXNG, Google can follow.
  *
- * `extract` and `getUsage` are optional: providers that don't support them
- * simply omit the method, and callers must guard with `?.` / `in` checks.
+ * Search and extract are now decoupled — see ExtractProvider. `getUsage` is
+ * optional: providers without a credit/usage system omit it, and callers
+ * guard with `?.`.
  */
 export interface SearchProvider {
   readonly name: string;
   search(params: SearchParams): Promise<SearchResponse>;
-  extract?(params: ExtractParams): Promise<ExtractResponse>;
   getUsage?(): Promise<UsageResponse>;
 }

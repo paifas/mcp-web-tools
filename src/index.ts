@@ -3,7 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
-import { createProvider } from "./providers/registry.js";
+import { createSearchProvider, createExtractProvider } from "./providers/registry.js";
 import { cacheConfigure } from "./utils/cache/index.js";
 import { registerWebSearchTool } from "./tools/web-search/index.js";
 import { registerWebReaderTool } from "./tools/web-reader/index.js";
@@ -16,16 +16,19 @@ async function main() {
     maxEntries: config.cacheMaxEntries,
     sweepIntervalMs: config.cacheSweepIntervalMs,
   });
-  const provider = createProvider(config);
+  const searchProvider = createSearchProvider(config);
+  const extractProvider = createExtractProvider(config); // may be null (web_read disabled)
 
   const server = new McpServer({
     name: config.serverName,
     version: config.serverVersion,
   });
 
-  registerWebSearchTool(server, config, provider);
-  registerWebReaderTool(server, config, provider);
-  registerCreditBalanceTool(server, config, provider);
+  registerWebSearchTool(server, config, searchProvider);
+  if (extractProvider) {
+    registerWebReaderTool(server, config, extractProvider);
+  }
+  registerCreditBalanceTool(server, config, searchProvider);
   registerGithubTools(server, config);
 
   const transport = new StdioServerTransport();

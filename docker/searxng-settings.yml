@@ -1,0 +1,16 @@
+# Minimal SearXNG settings for mcp-web-tools.
+# JSON output is enabled so the provider can parse results; the limiter is
+# disabled so automated callers aren't rate-limited or blocked.
+#
+# For full options see https://docs.searxng.org/admin/settings/settings.html
+
+use_default_settings: true
+
+server:
+  limiter: false
+  secret_key: "mcp-web-tools-dev-key-change-me"
+
+search:
+  formats:
+    - html
+    - json

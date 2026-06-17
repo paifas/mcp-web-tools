@@ -1,0 +1,53 @@
+# Reference compose for self-hosting the providers used by mcp-web-tools.
+#
+# SearXNG is enabled by default (lightweight, ~200 MB). Start it with:
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# Firecrawl's full stack (~14 GB RAM, multiple containers) is opt-in:
+#   docker compose -f docker/docker-compose.yml --profile full up -d
+#
+# This is a *scrape-only reference* — sufficient for the `web_read` tool.
+# For full Firecrawl feature parity (crawl queue via RabbitMQ, structured
+# extraction history via Postgres), follow Firecrawl's official self-host guide:
+#   https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md
+# Verify image tags and env vars against upstream before production use.
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: mcp-web-tools-searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+
+  # === Firecrawl (opt-in: --profile full) ===
+  # Heavy: pulls Chromium/Playwright and is the RAM/CPU hotspot.
+  firecrawl-api:
+    profiles: ["full"]
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: mcp-web-tools-firecrawl
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - USE_DB_AUTHENTICATION=false
+      - REDIS_URL=redis://firecrawl-redis:6379
+      - PLAYWRIGHT_MICROSERVICE_URL=http://firecrawl-playwright:3000
+      # OPENAI_API_KEY only needed for AI extraction features, not for /v1/scrape.
+    depends_on: [firecrawl-redis, firecrawl-playwright]
+    restart: unless-stopped
+
+  firecrawl-playwright:
+    profiles: ["full"]
+    image: ghcr.io/firecrawl/playwright-service:latest
+    container_name: mcp-web-tools-playwright
+    restart: unless-stopped
+
+  firecrawl-redis:
+    profiles: ["full"]
+    image: redis:alpine
+    container_name: mcp-web-tools-redis
+    restart: unless-stopped

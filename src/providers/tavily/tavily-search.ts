@@ -1,11 +1,13 @@
 import type { SearchResponse, ExtractResponse, UsageResponse } from "../../types.js";
-import type { SearchProvider, SearchParams, ExtractParams } from "../search-provider.js";
+import type { SearchProvider, SearchParams } from "../search-provider.js";
+import type { ExtractProvider, ExtractParams } from "../extract-provider.js";
 import { TavilyClient, TavilyError } from "./client/index.js";
 
 /**
- * Tavily implementation of the SearchProvider interface.
+ * Tavily implementation. Implements both SearchProvider and ExtractProvider
+ * so it can serve as either axis in the registry.
  */
-export class TavilySearchProvider implements SearchProvider {
+export class TavilySearchProvider implements SearchProvider, ExtractProvider {
   readonly name = "tavily";
   private readonly client: TavilyClient;
 
