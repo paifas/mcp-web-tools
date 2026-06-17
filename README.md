@@ -65,6 +65,18 @@ Search the web using Tavily. Returns results with titles, URLs, and snippets.
 | `excludeDomains` | string[] | — | Exclude results from these domains |
 | `includeAnswer` | boolean | `true` | Include an AI-generated answer summary |
 
+### `web_read`
+
+Extract clean content from web pages via the Tavily Extract API. Returns page text stripped of navigation, ads, and scripts. Supports up to 20 URLs per request.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `urls` | string[] | *required* | URLs to extract content from (1–20). Must be `http://` or `https://` |
+| `extractDepth` | string | — | `"basic"` (1 credit per 5 URLs, raw page HTML as markdown including navigation/boilerplate) or `"advanced"` (2 credits per 5 URLs, clean article content with nav/ads/sidebar/footer stripped) |
+| `includeImages` | boolean | `false` | Include extracted image URLs |
+
 ### `credit_balance`
 
 Check your Tavily API credit balance and usage.
@@ -73,11 +85,17 @@ Check your Tavily API credit balance and usage.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `TAVILY_API_KEY` | Yes | — | Your Tavily API key. Get one at [tavily.com](https://tavily.com) |
-| `WEBTOOLS_MAX_RESULTS` | No | `5` | Default number of results |
+| `TAVILY_API_KEY` | Yes\* | — | Your Tavily API key. Required when `WEBTOOLS_SEARCH_PROVIDER=tavily`. Get one at [tavily.com](https://tavily.com) |
+| `WEBTOOLS_SEARCH_PROVIDER` | No | `tavily` | Provider selection: `tavily` or `searxng` |
+| `SEARXNG_URL` | Conditional | — | Base URL of a SearXNG instance. Required when `WEBTOOLS_SEARCH_PROVIDER=searxng` |
+| `WEBTOOLS_MAX_RESULTS` | No | `5` | Default number of results (must be 1–20) |
 | `WEBTOOLS_SEARCH_DEPTH` | No | `basic` | Default search depth |
-| `WEBTOOLS_CACHE_TTL` | No | `3600` | Cache TTL in seconds (0 to disable) |
+| `WEBTOOLS_CACHE_TTL` | No | `3600` | Cache TTL in seconds (0 disables) |
+| `WEBTOOLS_CACHE_MAX_ENTRIES` | No | `100` | Maximum cache entries before LRU eviction (0 disables caching) |
+| `WEBTOOLS_CACHE_SWEEP_INTERVAL_MS` | No | `300000` | Interval in ms to sweep expired entries (0 disables periodic sweep) |
 | `WEBTOOLS_DEBUG` | No | — | Set to any value to enable debug logging to stderr |
+
+\* Required only when using the Tavily provider (the default).
 
 ## Example Output
 
@@ -94,6 +112,10 @@ Node.js 22 introduces require() support for ES modules, a WebSocket client, and 
 Sources:
 - [Node.js — Node.js 22 is now available!](https://nodejs.org/blog/announcements/v22-release-announce)
 ```
+
+## Security note
+
+This server is designed for trusted AI clients (Claude Code, Claude Desktop, OpenCode). The `web_read` tool accepts any `http(s)://` URL supplied by the calling client and does not implement SSRF protections (e.g. blocking of private/internal IP ranges). Do not expose this server to untrusted input.
 
 ## License
 

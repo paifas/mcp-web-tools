@@ -1,10 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-
-// Suppress unhandled rejection from retry logic's lastError variable during fake timer tests
-process.on("unhandledRejection", (reason: unknown) => {
-  if (reason instanceof Error && reason.message?.includes("Tavily API error (500)")) return;
-  throw reason;
-});
 import { TavilyClient, TavilyError } from "./index.js";
 
 describe("TavilyClient", () => {
@@ -91,11 +85,16 @@ describe("TavilyClient", () => {
       });
 
       vi.useFakeTimers();
-      const promise = client.search({ query: "test" });
+      // Attach the rejection handler synchronously so the promise never emits an
+      // unhandledRejection event while fake timers advance.
+      const settled = client.search({ query: "test" }).then(
+        () => new Error("expected rejection, got success"),
+        (e: unknown) => e,
+      );
       await vi.advanceTimersByTimeAsync(15000);
       vi.useRealTimers();
 
-      const error = await promise.catch((e: unknown) => e);
+      const error = await settled;
       expect(error).toBeInstanceOf(TavilyError);
       expect((error as TavilyError).message).toContain("Tavily API error (500)");
       expect(fetchMock).toHaveBeenCalledTimes(4); // initial + 3 retries

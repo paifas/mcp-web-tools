@@ -28,6 +28,25 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // The MCP SDK does not install signal handlers itself. Close the server and
+  // transport cleanly on SIGINT/SIGTERM so in-flight requests are flushed and
+  // the client observes a proper disconnect rather than a severed pipe.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await server.close();
+      await transport.close();
+    } catch (err) {
+      console.error(`Error during ${signal} shutdown:`, err);
+    } finally {
+      process.exit(0);
+    }
+  };
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
 main().catch((error) => {
