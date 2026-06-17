@@ -2,98 +2,15 @@
 
 MCP server providing web search and content extraction tools for AI assistants. Search and extract backends are decoupled — pick any combination of [Tavily](https://tavily.com) (hosted), [SearXNG](https://searxng.org) (self-hostable meta-search), and [Firecrawl](https://firecrawl.dev) (hosted or self-hosted extraction). The zero-config default runs entirely without API keys (SearXNG search + Firecrawl keyless extract).
 
-## Setup
+## Install
 
-Pick a stack below, then register the server with your client (examples at the end of this section).
+Add the server to your MCP client. The only required env var for the default stack is `SEARXNG_URL` (see [Backends](#backends) for how to get one running).
 
-### 1. Zero-cost stack (default)
-
-The default uses **SearXNG for search** and **Firecrawl keyless for extract** — no API keys, no account. You only need to point at a SearXNG instance.
-
-**Option A — local SearXNG container** (recommended; you control availability):
+**Claude Code (CLI):**
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
-export SEARXNG_URL=http://localhost:8080
-```
-
-**Option B — public SearXNG instance** (no Docker, but you depend on a third party):
-
-```bash
-export SEARXNG_URL=https://search.mdosch.de
-```
-
-> ⚠️ Public SearXNG instances are operated by volunteers and may be rate-limited, intermittently unavailable, or have JSON output disabled. A commonly available one is `https://search.mdosch.de`, but **this project does not control its availability**. For production use, run your own (Option A) or use Tavily.
-
-With `SEARXNG_URL` set, no other env vars are required — Firecrawl keyless extract works with no key.
-
-### 2. Tavily hosted (single key, both tools)
-
-```bash
-export TAVILY_API_KEY=your-api-key
-export WEBTOOLS_SEARCH_PROVIDER=tavily
-```
-
-Extract automatically defaults to Tavily (key reuse).
-
-### 3. Full self-host (SearXNG + Firecrawl local)
-
-~14 GB RAM, multiple containers. Brings up Firecrawl's scrape stack (API + Playwright + Redis) behind a compose profile. Sufficient for `web_read`; for full Firecrawl parity (crawl queue, extraction history) see [Firecrawl's SELF_HOST.md](https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md).
-
-```bash
-docker compose -f docker/docker-compose.yml --profile full up -d
-export SEARXNG_URL=http://localhost:8080
-export FIRECRAWL_URL=http://localhost:3002
-```
-
-### 4. Remote / mixed instances
-
-Any HTTP(S) URL works for either provider — point at a team-shared server, a cloud VM, or any public instance:
-
-```bash
-export WEBTOOLS_SEARCH_PROVIDER=searxng
-export SEARXNG_URL=https://search.your-corp.internal
-export FIRECRAWL_URL=https://firecrawl.your-corp.internal:3002
-```
-
-### Provider matrix
-
-| Search | Extract | What you set |
-|---|---|---|
-| SearXNG (default) | Firecrawl keyless (default) | `SEARXNG_URL` only |
-| SearXNG | Firecrawl keyed | `SEARXNG_URL` + `FIRECRAWL_API_KEY` |
-| SearXNG | Tavily | `SEARXNG_URL` + `TAVILY_API_KEY` + `WEBTOOLS_EXTRACT_PROVIDER=tavily` |
-| SearXNG | none (`web_read` disabled) | `SEARXNG_URL` + `WEBTOOLS_EXTRACT_PROVIDER=none` |
-| Tavily | Tavily | `TAVILY_API_KEY` + `WEBTOOLS_SEARCH_PROVIDER=tavily` |
-
-### Register with your client
-
-**Claude Code (CLI):** pass `-e KEY=VALUE` flags for each env var. A few common combinations:
-
-```bash
-# Zero-cost stack (default) — local SearXNG + Firecrawl keyless
 claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -- npx -y mcp-web-tools
-
-# Public SearXNG instance, no Docker
-claude mcp add mcp-web-tools -e SEARXNG_URL=https://search.mdosch.de -- npx -y mcp-web-tools
-
-# Fully self-hosted (SearXNG + Firecrawl local via docker compose --profile full)
-claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_URL=http://localhost:3002 -- npx -y mcp-web-tools
-
-# SearXNG search + Tavily extract (reuse a Tavily key)
-claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
-
-# SearXNG search only, web_read disabled
-claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=none -- npx -y mcp-web-tools
-
-# Firecrawl keyed (higher limits on hosted)
-claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_API_KEY=fc-your-key -- npx -y mcp-web-tools
-
-# Tavily for both (single key, the original path)
-claude mcp add mcp-web-tools -e WEBTOOLS_SEARCH_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
 ```
-
-Tip: `claude mcp add` also accepts `-s user` to install at user scope (available in all projects) or `-s project` for a shared `.mcp.json`.
 
 **Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
@@ -121,6 +38,107 @@ Tip: `claude mcp add` also accepts `-s user` to install at user scope (available
     "SEARXNG_URL": "http://localhost:8080"
   }
 }
+```
+
+That's the whole install for the zero-cost default. The sections below cover alternative backends and provider combinations.
+
+## Backends
+
+The server talks to two independent backends, configured via env vars in your client config (not shell exports).
+
+- **Search** (`WEBTOOLS_SEARCH_PROVIDER`): `searxng` (default) or `tavily`.
+- **Extract** (`WEBTOOLS_EXTRACT_PROVIDER`): derived from search by default — `firecrawl` for searxng (keyless, no key needed), `tavily` for tavily. Override with `firecrawl`, `tavily`, or `none`.
+
+### SearXNG (search, default)
+
+Point `SEARXNG_URL` at any SearXNG instance. Three options:
+
+**Run locally** (recommended; you control availability):
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+# then set SEARXNG_URL=http://localhost:8080 in your client config
+```
+
+**Use a public instance** (no Docker, but you depend on a third party):
+
+```
+SEARXNG_URL=https://search.mdosch.de
+```
+
+> ⚠️ Public SearXNG instances are operated by volunteers and may be rate-limited, intermittently unavailable, or have JSON output disabled. A commonly available one is `https://search.mdosch.de`, but **this project does not control its availability**. For production use, run your own or use Tavily.
+
+**Point at any remote instance** (team-shared, cloud VM, etc.):
+
+```
+SEARXNG_URL=https://search.your-corp.internal
+```
+
+### Firecrawl (extract, default for SearXNG search)
+
+Keyless by default — works with no env vars beyond what's above. Optional knobs:
+
+- `FIRECRAWL_API_KEY` — set for higher limits on the hosted API (free tier: ~1000 credits/month, 10/min).
+- `FIRECRAWL_URL` — point at a self-hosted Firecrawl instance instead of the hosted API. See [Full self-host](#full-self-host-optional).
+
+### Tavily (search and/or extract)
+
+Single key powers both tools. Get one at [tavily.com](https://tavily.com):
+
+```
+WEBTOOLS_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your-api-key
+```
+
+Extract automatically defaults to Tavily (key reuse). You can also mix: keep SearXNG for search and use Tavily only for extract — see the matrix below.
+
+## Provider combinations
+
+| Search | Extract | Env vars to set |
+|---|---|---|
+| SearXNG (default) | Firecrawl keyless (default) | `SEARXNG_URL` |
+| SearXNG | Firecrawl keyed | `SEARXNG_URL` + `FIRECRAWL_API_KEY` |
+| SearXNG | Tavily | `SEARXNG_URL` + `WEBTOOLS_EXTRACT_PROVIDER=tavily` + `TAVILY_API_KEY` |
+| SearXNG | none (`web_read` disabled) | `SEARXNG_URL` + `WEBTOOLS_EXTRACT_PROVIDER=none` |
+| Tavily | Tavily | `WEBTOOLS_SEARCH_PROVIDER=tavily` + `TAVILY_API_KEY` |
+
+Equivalent `claude mcp add` one-liners for the variations:
+
+```bash
+# Public SearXNG instance, no Docker
+claude mcp add mcp-web-tools -e SEARXNG_URL=https://search.mdosch.de -- npx -y mcp-web-tools
+
+# Fully self-hosted (SearXNG + Firecrawl local via docker compose --profile full)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_URL=http://localhost:3002 -- npx -y mcp-web-tools
+
+# SearXNG search + Tavily extract (reuse a Tavily key)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
+
+# SearXNG search only, web_read disabled
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e WEBTOOLS_EXTRACT_PROVIDER=none -- npx -y mcp-web-tools
+
+# Firecrawl keyed (higher limits on hosted)
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_API_KEY=fc-your-key -- npx -y mcp-web-tools
+
+# Tavily for both (single key, the original path)
+claude mcp add mcp-web-tools -e WEBTOOLS_SEARCH_PROVIDER=tavily -e TAVILY_API_KEY=your-tavily-key -- npx -y mcp-web-tools
+```
+
+Tip: `claude mcp add` also accepts `-s user` (available in all projects) or `-s project` (shared `.mcp.json`).
+
+## Full self-host (optional)
+
+~14 GB RAM, multiple containers. Brings up SearXNG plus Firecrawl's scrape stack (API + Playwright + Redis) so the entire server runs without external network calls. Sufficient for `web_read`; for full Firecrawl parity (crawl queue, extraction history) see [Firecrawl's SELF_HOST.md](https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md).
+
+```bash
+docker compose -f docker/docker-compose.yml --profile full up -d
+```
+
+Then point the server at both local endpoints:
+
+```
+SEARXNG_URL=http://localhost:8080
+FIRECRAWL_URL=http://localhost:3002
 ```
 
 ## Tools
