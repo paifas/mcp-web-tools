@@ -83,7 +83,7 @@ Check your Tavily API credit balance and usage.
 
 ## GitHub Tools
 
-Two tools for reading public GitHub repository content directly via the GitHub REST API. These do not go through the search provider — they live in their own namespace and work anonymously.
+Three tools for reading public GitHub repository content directly via the GitHub REST API. These do not go through the search provider — they live in their own namespace and work anonymously.
 
 ### `github_get_repo_structure`
 
@@ -108,6 +108,20 @@ Read the full content of a file in a GitHub repository. Files larger than 512 KB
 | `repo` | string | *required* | Repository in the form `owner/repo` |
 | `path` | string | *required* | Path to the file inside the repo |
 | `ref` | string | default branch | Git ref (branch, tag, or commit SHA) |
+
+### `github_search_repo`
+
+Search a GitHub repository across code, issues, and pull requests in one call. When `kind=all` (the default), all three searches run in parallel and results are grouped by type. Code search uses GitHub's `/search/code` endpoint, which **requires a `GITHUB_TOKEN`** (anonymous code search is not supported by GitHub — the call returns 401 without a token). Issues and PRs use `/search/issues` and work anonymously.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `repo` | string | *required* | Repository in the form `owner/repo` |
+| `query` | string | *required* | Search query. GitHub search syntax is supported (e.g. `"auth token"`, `"bug in login"`, `"label:bug"`) |
+| `kind` | string | `"all"` | `"code"`, `"issues"`, `"prs"`, or `"all"` (fans out across all three in parallel) |
+| `state` | string | `"all"` | Filter for issues/PRs only (`"open"`, `"closed"`, or `"all"`). Ignored for code |
+| `maxResults` | number | `5` | Max results per kind (1–10). When `kind=all`, the tool returns up to 3× this number of results |
 
 ## Environment Variables
 

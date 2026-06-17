@@ -57,6 +57,22 @@ export interface RepoFileContent {
   size: number;
 }
 
+export interface CodeSearchResult {
+  path: string;
+  url: string; // html_url
+  snippet?: string; // text_matches fragment if present, else undefined
+}
+
+export interface IssueSearchResult {
+  number: number;
+  title: string;
+  url: string; // html_url
+  state: "open" | "closed";
+  isPullRequest: boolean;
+  updatedAt: string; // ISO
+  snippet?: string; // first ~200 chars of body
+}
+
 interface RequestOptions {
   method?: "GET" | "POST";
   body?: unknown;
@@ -154,4 +170,121 @@ export class GithubClient {
     }
     return result;
   }
+
+  /**
+   * Search for code matches inside a repo. Uses GitHub's /search/code endpoint
+   * scoped with `repo:owner/repo`. Note: code search requires the repo to be
+   * indexed by GitHub; small/new repos may return nothing.
+   */
+  async searchCode(
+    owner: string,
+    repo: string,
+    query: string,
+    opts: { maxResults?: number } = {},
+  ): Promise<CodeSearchResult[]> {
+    const perPage = clampPerPage(opts.maxResults);
+    const q = `${query} repo:${owner}/${repo}`;
+    const url = `/search/code?per_page=${perPage}&q=${encodeURIComponent(q)}`;
+    const payload = await this.request<RawCodeSearchPayload>(url, {
+      resourceDescription: `code search in ${owner}/${repo}`,
+    });
+    return (payload.items ?? []).slice(0, perPage).map((it) => ({
+      path: it.path,
+      url: it.html_url,
+      snippet: extractCodeSnippet(it),
+    }));
+  }
+
+  /**
+   * Search issues (non-PR) inside a repo via /search/issues with `type:issue`.
+   */
+  async searchIssues(
+    owner: string,
+    repo: string,
+    query: string,
+    opts: { maxResults?: number; state?: "open" | "closed" | "all" } = {},
+  ): Promise<IssueSearchResult[]> {
+    return this.searchIssuesOrPRs(owner, repo, query, "issue", opts);
+  }
+
+  /**
+   * Search pull requests inside a repo via /search/issues with `type:pr`.
+   */
+  async searchPullRequests(
+    owner: string,
+    repo: string,
+    query: string,
+    opts: { maxResults?: number; state?: "open" | "closed" | "all" } = {},
+  ): Promise<IssueSearchResult[]> {
+    return this.searchIssuesOrPRs(owner, repo, query, "pr", opts);
+  }
+
+  private async searchIssuesOrPRs(
+    owner: string,
+    repo: string,
+    query: string,
+    type: "issue" | "pr",
+    opts: { maxResults?: number; state?: "open" | "closed" | "all" },
+  ): Promise<IssueSearchResult[]> {
+    const perPage = clampPerPage(opts.maxResults);
+    const stateQualifier = opts.state && opts.state !== "all" ? ` state:${opts.state}` : "";
+    const q = `${query} repo:${owner}/${repo} type:${type}${stateQualifier}`;
+    const url = `/search/issues?per_page=${perPage}&q=${encodeURIComponent(q)}`;
+    const payload = await this.request<RawIssueSearchPayload>(url, {
+      resourceDescription: `${type} search in ${owner}/${repo}`,
+    });
+    return (payload.items ?? []).slice(0, perPage).map((it) => ({
+      number: it.number,
+      title: it.title,
+      url: it.html_url,
+      state: it.state,
+      isPullRequest: Boolean(it.pull_request),
+      updatedAt: it.updated_at,
+      snippet: truncate(it.body),
+    }));
+  }
+}
+
+interface RawCodeSearchItem {
+  path: string;
+  html_url: string;
+  text_matches?: Array<{ fragment?: string }>;
+}
+
+interface RawCodeSearchPayload {
+  total_count?: number;
+  items?: RawCodeSearchItem[];
+}
+
+interface RawIssueSearchItem {
+  number: number;
+  title: string;
+  html_url: string;
+  state: "open" | "closed";
+  pull_request?: unknown;
+  updated_at: string;
+  body?: string | null;
+}
+
+interface RawIssueSearchPayload {
+  total_count?: number;
+  items?: RawIssueSearchItem[];
+}
+
+function clampPerPage(maxResults?: number): number {
+  if (typeof maxResults !== "number" || !Number.isFinite(maxResults)) return 5;
+  return Math.max(1, Math.min(100, Math.floor(maxResults)));
+}
+
+function truncate(text: string | null | undefined, max = 200): string | undefined {
+  if (!text) return undefined;
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  return `${collapsed.slice(0, max)}…`;
+}
+
+function extractCodeSnippet(item: RawCodeSearchItem): string | undefined {
+  const fragment = item.text_matches?.[0]?.fragment;
+  if (fragment) return truncate(fragment.replace(/<[^>]+>/g, ""), 200);
+  return undefined;
 }

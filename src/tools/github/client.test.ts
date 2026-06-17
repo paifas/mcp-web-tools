@@ -123,4 +123,116 @@ describe("GithubClient", () => {
       expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
     });
   });
+
+  describe("searchCode", () => {
+    it("returns code results with path, url, and optional snippet", async () => {
+      mockResponse(200, {
+        total_count: 1,
+        items: [
+          {
+            name: "auth.ts",
+            path: "src/auth.ts",
+            html_url: "https://github.com/o/r/blob/HEAD/src/auth.ts",
+            text_matches: [{ fragment: "export function <mark>auth</mark>token() {" }],
+          },
+        ],
+      });
+      const result = await client.searchCode("o", "r", "auth token", { maxResults: 5 });
+      expect(result).toHaveLength(1);
+      expect(result[0].path).toBe("src/auth.ts");
+      expect(result[0].url).toContain("src/auth.ts");
+      expect(result[0].snippet).toContain("export function authtoken");
+    });
+
+    it("scopes the query with repo:owner/repo and per_page", async () => {
+      mockResponse(200, { total_count: 0, items: [] });
+      await client.searchCode("o", "r", "foo", { maxResults: 7 });
+      const url = fetchMock.mock.calls[0][0] as string;
+      expect(url).toContain("/search/code");
+      expect(url).toContain("per_page=7");
+      expect(url).toContain(encodeURIComponent("foo repo:o/r"));
+    });
+
+    it("returns empty array when items is missing", async () => {
+      mockResponse(200, { total_count: 0 });
+      const result = await client.searchCode("o", "r", "foo");
+      expect(result).toEqual([]);
+    });
+
+    it("propagates rate-limit errors", async () => {
+      mockResponse(403, { message: "rate limit" }, { "x-ratelimit-remaining": "0" });
+      await expect(client.searchCode("o", "r", "foo")).rejects.toBeInstanceOf(GithubRateLimitError);
+    });
+
+    it("propagates 422 validation errors as GithubError", async () => {
+      mockResponse(422, { message: "Validation Failed" });
+      const err = await client.searchCode("o", "r", "foo").catch((e) => e);
+      expect(err).toBeInstanceOf(GithubError);
+      expect((err as GithubError).status).toBe(422);
+    });
+  });
+
+  describe("searchIssues", () => {
+    it("returns issues (non-PR) with type:issue qualifier", async () => {
+      mockResponse(200, {
+        total_count: 1,
+        items: [
+          {
+            number: 42,
+            title: "Bug in login",
+            html_url: "https://github.com/o/r/issues/42",
+            state: "open",
+            updated_at: "2024-08-12T00:00:00Z",
+            body: "Login fails when password has spaces.",
+          },
+        ],
+      });
+      const result = await client.searchIssues("o", "r", "login", { maxResults: 5 });
+      expect(result).toHaveLength(1);
+      expect(result[0].number).toBe(42);
+      expect(result[0].isPullRequest).toBe(false);
+      expect(result[0].snippet).toContain("Login fails");
+      const url = fetchMock.mock.calls[0][0] as string;
+      expect(url).toContain(encodeURIComponent("login repo:o/r type:issue"));
+    });
+
+    it("omits the state qualifier when state is 'all'", async () => {
+      mockResponse(200, { total_count: 0, items: [] });
+      await client.searchIssues("o", "r", "foo", { state: "all" });
+      const url = fetchMock.mock.calls[0][0] as string;
+      expect(url).not.toContain("state:");
+    });
+
+    it("includes state:open when state is 'open'", async () => {
+      mockResponse(200, { total_count: 0, items: [] });
+      await client.searchIssues("o", "r", "foo", { state: "open" });
+      const url = fetchMock.mock.calls[0][0] as string;
+      expect(url).toContain(encodeURIComponent("state:open"));
+    });
+  });
+
+  describe("searchPullRequests", () => {
+    it("uses type:pr qualifier and flags isPullRequest", async () => {
+      mockResponse(200, {
+        total_count: 1,
+        items: [
+          {
+            number: 7,
+            title: "Fix login",
+            html_url: "https://github.com/o/r/pull/7",
+            state: "closed",
+            updated_at: "2024-09-01T00:00:00Z",
+            pull_request: { url: "x" },
+            body: null,
+          },
+        ],
+      });
+      const result = await client.searchPullRequests("o", "r", "fix", { maxResults: 5 });
+      expect(result).toHaveLength(1);
+      expect(result[0].isPullRequest).toBe(true);
+      expect(result[0].snippet).toBeUndefined();
+      const url = fetchMock.mock.calls[0][0] as string;
+      expect(url).toContain(encodeURIComponent("fix repo:o/r type:pr"));
+    });
+  });
 });
