@@ -12,6 +12,8 @@ Add the server to your MCP client. The only required env var for the default sta
 claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -- npx -y mcp-web-tools
 ```
 
+> ⚠️ This command points the server at `http://localhost:8080` but does not start anything there. Pick a SearXNG instance from [Backends](#backends) first (the [local `docker run`](#searxng-search-default) is fastest), then run this command.
+
 **Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
@@ -53,27 +55,22 @@ The server talks to two independent backends, configured via env vars in your cl
 
 Point `SEARXNG_URL` at any SearXNG instance. Three options:
 
-**Run locally** (recommended; you control availability). SearXNG needs JSON output enabled and the rate limiter disabled — the bundled image doesn't do this by default, so write a small settings file and mount it:
+**Run locally** (recommended; you control availability). SearXNG doesn't enable JSON output by default — the only required change is adding `json` to `search.formats`. The rate limiter is already off in the Docker image. One command:
 
 ```bash
-mkdir -p ~/.mcp-web-tools && cat > ~/.mcp-web-tools/searxng.yml << 'EOF'
+cat > ~/.mcp-searxng.yml <<'EOF' && docker run -d --name mcp-searxng -p 8080:8080 \
+  -v ~/.mcp-searxng.yml:/etc/searxng/settings.yml:ro \
+  --restart unless-stopped \
+  searxng/searxng:latest
 use_default_settings: true
 server:
-  limiter: false
   secret_key: "change-me"
 search:
   formats: [html, json]
 EOF
-
-docker run -d --name mcp-searxng -p 8080:8080 \
-  -v ~/.mcp-web-tools/searxng.yml:/etc/searxng/settings.yml:ro \
-  --restart unless-stopped \
-  searxng/searxng:latest
 ```
 
 Then set `SEARXNG_URL=http://localhost:8080` in your client config.
-
-> If you've cloned this repo, the same thing works via `docker compose -f docker/docker-compose.yml up -d` (the settings file is bundled).
 
 **Use a public instance** (no Docker, but you depend on a third party):
 
@@ -143,31 +140,20 @@ Tip: `claude mcp add` also accepts `-s user` (available in all projects) or `-s 
 
 ## Full self-host (optional)
 
-~14 GB RAM, multiple containers. Brings up SearXNG plus Firecrawl's scrape stack (API + Playwright + Redis) so the entire server runs without external network calls. Sufficient for `web_read`; for full Firecrawl parity (crawl queue, extraction history) see [Firecrawl's SELF_HOST.md](https://github.com/mendableai/firecrawl/blob/main/SELF_HOST.md).
+Run the entire server with no external network calls: SearXNG for search, Firecrawl for extract, both on your machine. Idle footprint ~3 GB RAM across the Firecrawl containers (api + playwright + redis + rabbitmq + postgres) plus ~150 MB for SearXNG.
 
-The Firecrawl stack uses multiple linked services, so this path uses the bundled compose file. Get it one of two ways:
+**1. SearXNG (search)** — use the `docker run` snippet in [Backends → SearXNG](#searxng-search-default).
 
-**Option A — clone the repo:**
+**2. Firecrawl (extract)** — use Firecrawl's official self-host compose. Their stack has its own service graph (Postgres, RabbitMQ, Redis, Playwright); follow their guide:
+
+→ [firecrawl/firecrawl — SELF_HOST.md](https://github.com/firecrawl/firecrawl/blob/main/SELF_HOST.md)
+
+> Firecrawl's self-host requirements change across releases (the v1.5.0 overhaul made Postgres + RabbitMQ mandatory). Their compose is the source of truth — this project does not try to mirror it.
+
+**3. Point mcp-web-tools at both local endpoints:**
 
 ```bash
-git clone https://github.com/paifas/mcp-web-tools.git && cd mcp-web-tools
-docker compose -f docker/docker-compose.yml --profile full up -d
-```
-
-**Option B — download just the compose + settings files:**
-
-```bash
-mkdir -p mcp-self-host && cd mcp-self-host
-curl -fLO https://raw.githubusercontent.com/paifas/mcp-web-tools/main/docker/docker-compose.yml
-curl -fLO https://raw.githubusercontent.com/paifas/mcp-web-tools/main/docker/searxng-settings.yml
-docker compose --profile full up -d
-```
-
-Then point the server at both local endpoints:
-
-```
-SEARXNG_URL=http://localhost:8080
-FIRECRAWL_URL=http://localhost:3002
+claude mcp add mcp-web-tools -e SEARXNG_URL=http://localhost:8080 -e FIRECRAWL_URL=http://localhost:3002 -- npx -y mcp-web-tools
 ```
 
 ## Tools
@@ -286,7 +272,7 @@ Each backend supports a different subset of features. Unsupported params are sil
 | Credit/usage (`credit_balance`) | ✅ | ❌ "not supported" | ❌ "not supported" |
 
 **Common pitfalls:**
-- **SearXNG 403** — JSON output is disabled on the instance. Edit `settings.yml` (`search.formats` must include `json`) and restart. The included `docker/searxng-settings.yml` has this enabled.
+- **SearXNG 403** — JSON output is disabled on the instance. Edit `settings.yml` (`search.formats` must include `json`) and restart. The `docker run` snippet in [Backends](#searxng-search-default) bakes this in via the mounted settings file.
 - **SearXNG 429** — rate limiter is on. Disable `server.limiter` in `settings.yml`, or use a different instance.
 - **Firecrawl 429** — keyless free tier exhausted (~1000 credits/month, 10/min). Set `FIRECRAWL_API_KEY` for higher limits, or self-host.
 

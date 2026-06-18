@@ -46,7 +46,7 @@ export class SearXNGProvider implements SearchProvider {
 
     if (res.status === 403) {
       throw new Error(
-        "SearXNG returned 403 — JSON output is disabled. Edit settings.yml:\n\n" +
+        "SearXNG returned 403 — JSON output may be disabled. Edit settings.yml:\n\n" +
           "  search:\n    formats:\n      - html\n      - json\n\n" +
           "Then restart SearXNG. If you're using a public instance, the operator may have disabled JSON.",
       );
@@ -59,6 +59,17 @@ export class SearXNGProvider implements SearchProvider {
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`SearXNG error (${res.status}): ${body}`);
+    }
+
+    // SearXNG silently redirects to HTML (200) when JSON output is not enabled
+    // instead of returning an error. Detect this and give an actionable message.
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        "SearXNG did not return JSON — JSON output is disabled. Edit settings.yml:\n\n" +
+          "  search:\n    formats:\n      - html\n      - json\n\n" +
+          "Then restart SearXNG. If you're using a public instance, the operator may have disabled JSON.",
+      );
     }
 
     const data = (await res.json()) as SearXNGResponse;

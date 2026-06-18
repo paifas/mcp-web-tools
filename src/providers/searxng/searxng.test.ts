@@ -18,10 +18,15 @@ describe("SearXNGProvider", () => {
   });
 
   function mockResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
+    const merged: Record<string, string> = {
+      // Object body → JSON; string body → HTML. Override per-test via headers arg.
+      "content-type": typeof body === "string" ? "text/html" : "application/json",
+      ...headers,
+    };
     fetchMock.mockResolvedValueOnce({
       ok: status >= 200 && status < 300,
       status,
-      headers: { get: (h: string) => headers[h.toLowerCase()] ?? null },
+      headers: { get: (h: string) => merged[h.toLowerCase()] ?? null },
       text: () => Promise.resolve(typeof body === "string" ? body : JSON.stringify(body)),
       json: () => Promise.resolve(body),
     });
@@ -100,7 +105,13 @@ describe("SearXNGProvider", () => {
 
   it("throws actionable 403 error when JSON is disabled", async () => {
     mockResponse(403, "Forbidden");
-    await expect(provider.search({ query: "x" })).rejects.toThrow(/JSON output is disabled/);
+    await expect(provider.search({ query: "x" })).rejects.toThrow(/JSON output may be disabled/);
+  });
+
+  it("throws actionable error when SearXNG redirects to HTML (JSON not enabled)", async () => {
+    // SearXNG returns 200 HTML when format=json is not in search.formats.
+    mockResponse(200, "<html>redirected</html>", { "content-type": "text/html" });
+    await expect(provider.search({ query: "x" })).rejects.toThrow(/did not return JSON/);
   });
 
   it("throws actionable 429 error", async () => {
