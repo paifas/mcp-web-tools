@@ -60,10 +60,19 @@ describe("loadConfig extract provider derivation", () => {
     expect(c.firecrawlUrl).toBe("http://localhost:3002");
   });
 
-  it("requires SEARXNG_URL when search=searxng", () => {
+  it("defaults SEARXNG_URL to public instance when unset", () => {
     process.env = { ...process.env, WEBTOOLS_SEARCH_PROVIDER: "searxng" };
     delete process.env.SEARXNG_URL;
-    expect(() => loadConfig()).toThrow(/SEARXNG_URL/);
+    const c = loadConfig();
+    expect(c.searxngUrl).toBe("https://search.mdosch.de");
+  });
+
+  it("works with zero env vars (full zero-config)", () => {
+    process.env = {};
+    const c = loadConfig();
+    expect(c.searchProvider).toBe("searxng");
+    expect(c.searxngUrl).toBe("https://search.mdosch.de");
+    expect(c.extractProvider).toBe("firecrawl");
   });
 
   it("requires TAVILY_API_KEY when extract=tavily", () => {

@@ -26,6 +26,14 @@ const MAX_RESULTS_LIMIT = 20;
 
 const DEFAULT_FIRECRAWL_URL = "https://api.firecrawl.dev";
 
+/**
+ * Default public SearXNG instance. Used when the user sets no SEARXNG_URL at all,
+ * so the server works out-of-the-box with zero config. Public instances are
+ * volunteer-operated — availability and rate limits are not guaranteed.
+ * Override with SEARXNG_URL (local container, different public instance, etc.).
+ */
+const DEFAULT_SEARXNG_URL = "https://search.mdosch.de";
+
 export interface ServerConfig {
   searchProvider: SearchProviderName;
   /** Required when searchProvider = "tavily". */
@@ -62,8 +70,8 @@ function parseNonNegInt(value: string | undefined, fallback: number, label: stri
 
 export function loadConfig(): ServerConfig {
   // Zero-config default is the free stack: SearXNG search + Firecrawl keyless extract.
-  // Users must point SEARXNG_URL at an instance (local or remote). For a recommended
-  // public instance see the README; availability of public instances is not guaranteed.
+  // Works out of the box with no env vars — uses a public SearXNG instance by default.
+  // Set SEARXNG_URL to point at your own instance or a different public one.
   const searchProvider = (process.env.WEBTOOLS_SEARCH_PROVIDER ?? "searxng") as SearchProviderName;
   if (!SUPPORTED_SEARCH_PROVIDERS.includes(searchProvider)) {
     throw new Error(
@@ -73,16 +81,10 @@ export function loadConfig(): ServerConfig {
   }
 
   const tavilyApiKey = process.env.TAVILY_API_KEY;
-  const searxngUrl = process.env.SEARXNG_URL;
+  const searxngUrl = process.env.SEARXNG_URL ?? DEFAULT_SEARXNG_URL;
   if (searchProvider === "tavily" && !tavilyApiKey) {
     throw new Error(
       "TAVILY_API_KEY environment variable is required when WEBTOOLS_SEARCH_PROVIDER=tavily. Get one at https://tavily.com",
-    );
-  }
-  if (searchProvider === "searxng" && !searxngUrl) {
-    throw new Error(
-      "SEARXNG_URL environment variable is required when WEBTOOLS_SEARCH_PROVIDER=searxng " +
-        "(e.g. http://localhost:8080 for a local container, or a public instance URL — see README).",
     );
   }
 
