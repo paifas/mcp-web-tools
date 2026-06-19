@@ -1,6 +1,6 @@
 {
   "name": "mcp-web-tools",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "MCP server providing web search tools for AI assistants",
   "type": "module",
   "main": "build/index.js",
@@ -35,11 +35,20 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
     "web-search",
+    "web-reader",
+    "web-scraping",
+    "content-extraction",
+    "searxng",
+    "firecrawl",
     "tavily",
+    "self-hosted",
     "ai",
     "claude",
+    "claude-code",
+    "claude-desktop",
     "opencode"
   ],
   "license": "MIT",
