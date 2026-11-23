@@ -9,36 +9,48 @@ import { cacheKey, cacheGet, cacheSet } from "../../utils/cache/index.js";
 import type { SearchResponse } from "../../types.js";
 
 const webSearchSchema = {
-  query: z.string().describe("The search query"),
-  maxResults: z.number().min(1).max(20).optional().describe("Maximum number of results (default: 5)"),
+  query: z.string().trim().min(1).describe("A nonempty search query"),
+  maxResults: z.number().int().min(1).max(20).optional(),
   searchDepth: z
     .enum(["advanced", "basic", "fast", "ultra-fast"])
     .optional()
-    .describe("Search depth: basic/fast/ultra-fast (1 credit) or advanced (2 credits)"),
-  topic: z.enum(["general", "news", "finance"]).optional().describe("Search topic category"),
+    .describe("Tavily only: basic/fast/ultra-fast (1 credit) or advanced (2 credits). Ignored by SearXNG."),
+  topic: z
+    .enum(["general", "news", "finance"])
+    .optional()
+    .describe("Search category. SearXNG maps finance to general."),
   timeRange: z.enum(["day", "week", "month", "year"]).optional().describe("Time range filter for results"),
-  startDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("Start date filter (YYYY-MM-DD)"),
-  endDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
-    .optional()
-    .describe("End date filter (YYYY-MM-DD)"),
+  startDate: z.iso.date().optional().describe("Tavily start date (YYYY-MM-DD). Ignored by SearXNG."),
+  endDate: z.iso.date().optional().describe("Tavily end date (YYYY-MM-DD). Ignored by SearXNG."),
   includeDomains: z.array(z.string()).optional().describe("Only include results from these domains"),
   excludeDomains: z.array(z.string()).optional().describe("Exclude results from these domains"),
-  includeAnswer: z.boolean().optional().describe("Include an AI-generated answer (default: true)"),
+  includeAnswer: z.boolean().optional().describe("Tavily AI-generated answer (default: true). Ignored by SearXNG."),
 };
 
 export function registerWebSearchTool(server: McpServer, config: ServerConfig, provider: SearchProvider) {
   server.tool(
     "web_search",
-    "Search the web. Returns results with titles, URLs, and snippets. Supports filtering by domain, topic, time range, and search depth. Provider is configured server-side (Tavily or SearXNG).",
-    webSearchSchema,
+    `Search the web using ${provider.name}. Returns titles, URLs, and snippets. ` +
+      (provider.name === "searxng"
+        ? "Domain filters are post-filtered and may return fewer results. Search depth, explicit start/end dates and AI answers are ignored; finance maps to general. Time filtering depends on the instance and engines."
+        : "Supports domain, topic, date and depth filters. Optional answers are provider-generated, not source evidence."),
+    {
+      ...webSearchSchema,
+      maxResults: webSearchSchema.maxResults.describe(`Maximum results (default: ${config.defaultMaxResults}, 1–20)`),
+      searchDepth: webSearchSchema.searchDepth.describe(
+        provider.name === "tavily"
+          ? `Tavily depth (default: ${config.defaultSearchDepth}): basic/fast/ultra-fast cost 1 credit, advanced costs 2.`
+          : "Ignored by SearXNG.",
+      ),
+    },
     async (params) => {
       try {
+        if (params.startDate && params.endDate && params.startDate > params.endDate) {
+          return {
+            content: [{ type: "text" as const, text: "startDate must be on or before endDate." }],
+            isError: true,
+          };
+        }
         const searchParams = {
           query: params.query,
           maxResults: params.maxResults ?? config.defaultMaxResults,

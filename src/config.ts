@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isHttpUrl } from "./utils/url.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,7 +29,7 @@ const DEFAULT_FIRECRAWL_URL = "https://api.firecrawl.dev";
 
 /**
  * Default public SearXNG instance. Used when the user sets no SEARXNG_URL at all,
- * so the server works out-of-the-box with zero config. Public instances are
+ * as a best-effort no-key starting point. Public instances are
  * volunteer-operated — availability and rate limits are not guaranteed.
  * Override with SEARXNG_URL (local container, different public instance, etc.).
  */
@@ -42,7 +43,7 @@ export interface ServerConfig {
   searxngUrl?: string;
   /**
    * Extract provider. Derived when unset: tavily search → tavily extract,
-   * searxng search → firecrawl extract (keyless works with no env vars).
+   * searxng search → firecrawl extract (best-effort keyless access).
    */
   extractProvider: ExtractProviderName;
   /** Default: https://api.firecrawl.dev. Accepts any HTTP(S) URL. */
@@ -56,21 +57,23 @@ export interface ServerConfig {
   cacheTtl: number;
   cacheMaxEntries: number;
   cacheSweepIntervalMs: number;
+  /** Max characters of each page returned by web_read; 0 disables truncation. */
+  maxChars: number;
   serverName: string;
   serverVersion: string;
 }
 
 function parseNonNegInt(value: string | undefined, fallback: number, label: string): number {
-  const parsed = parseInt(value ?? String(fallback), 10);
-  if (Number.isNaN(parsed) || parsed < 0 || !Number.isFinite(parsed)) {
-    throw new Error(`Invalid ${label}: "${value}". Must be a non-negative integer.`);
+  const raw = value ?? String(fallback);
+  const parsed = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid ${label}. Must be a non-negative safe integer.`);
   }
   return parsed;
 }
 
 export function loadConfig(): ServerConfig {
-  // Zero-config default is the free stack: SearXNG search + Firecrawl keyless extract.
-  // Works out of the box with no env vars — uses a public SearXNG instance by default.
+  // Best-effort no-key defaults; provider availability and quotas are external.
   // Set SEARXNG_URL to point at your own instance or a different public one.
   const searchProvider = (process.env.WEBTOOLS_SEARCH_PROVIDER ?? "searxng") as SearchProviderName;
   if (!SUPPORTED_SEARCH_PROVIDERS.includes(searchProvider)) {
@@ -80,7 +83,7 @@ export function loadConfig(): ServerConfig {
     );
   }
 
-  const tavilyApiKey = process.env.TAVILY_API_KEY;
+  const tavilyApiKey = process.env.TAVILY_API_KEY?.trim() || undefined;
   const searxngUrl = process.env.SEARXNG_URL ?? DEFAULT_SEARXNG_URL;
   if (searchProvider === "tavily" && !tavilyApiKey) {
     throw new Error(
@@ -89,7 +92,7 @@ export function loadConfig(): ServerConfig {
   }
 
   // Extract provider: explicit env wins, otherwise derive from search provider.
-  // searxng → firecrawl (keyless just works with no env vars)
+  // searxng → firecrawl (keyless access subject to provider restrictions)
   // tavily  → tavily (key reuse)
   const derivedDefault: ExtractProviderName = searchProvider === "tavily" ? "tavily" : "firecrawl";
   const extractProviderRaw = process.env.WEBTOOLS_EXTRACT_PROVIDER ?? derivedDefault;
@@ -111,11 +114,15 @@ export function loadConfig(): ServerConfig {
         "Use a different extract provider or set the key.",
     );
   }
-  // firecrawl: no requirements — keyless mode works with no env vars.
-  // none: no requirements; web_read will not be registered.
+  if (searchProvider === "searxng" && !isHttpUrl(searxngUrl)) {
+    throw new Error("Invalid SEARXNG_URL. Use an HTTP(S) URL without embedded credentials.");
+  }
+  if (extractProvider === "firecrawl" && !isHttpUrl(firecrawlUrl)) {
+    throw new Error("Invalid FIRECRAWL_URL. Use an HTTP(S) URL without embedded credentials.");
+  }
 
-  const defaultMaxResults = parseInt(process.env.WEBTOOLS_MAX_RESULTS ?? "5", 10);
-  if (Number.isNaN(defaultMaxResults) || defaultMaxResults < 1) {
+  const defaultMaxResults = parseNonNegInt(process.env.WEBTOOLS_MAX_RESULTS, 5, "WEBTOOLS_MAX_RESULTS");
+  if (defaultMaxResults < 1) {
     throw new Error(
       `Invalid WEBTOOLS_MAX_RESULTS value: "${process.env.WEBTOOLS_MAX_RESULTS}". Must be a positive integer.`,
     );
@@ -127,10 +134,10 @@ export function loadConfig(): ServerConfig {
   }
 
   const defaultSearchDepth = (process.env.WEBTOOLS_SEARCH_DEPTH ?? "basic") as
-    | "advanced"
-    | "basic"
-    | "fast"
-    | "ultra-fast";
+    "advanced" | "basic" | "fast" | "ultra-fast";
+  if (!["advanced", "basic", "fast", "ultra-fast"].includes(defaultSearchDepth)) {
+    throw new Error("Invalid WEBTOOLS_SEARCH_DEPTH. Use advanced, basic, fast, or ultra-fast.");
+  }
 
   const cacheTtl = parseNonNegInt(process.env.WEBTOOLS_CACHE_TTL, 3600, "WEBTOOLS_CACHE_TTL");
   const cacheMaxEntries = parseNonNegInt(process.env.WEBTOOLS_CACHE_MAX_ENTRIES, 100, "WEBTOOLS_CACHE_MAX_ENTRIES");
@@ -139,6 +146,14 @@ export function loadConfig(): ServerConfig {
     5 * 60 * 1000,
     "WEBTOOLS_CACHE_SWEEP_INTERVAL_MS",
   );
+  if (cacheSweepIntervalMs > 2_147_483_647) {
+    throw new Error("WEBTOOLS_CACHE_SWEEP_INTERVAL_MS exceeds the Node timer limit (2147483647 ms).");
+  }
+  if (cacheTtl > Math.floor((Number.MAX_SAFE_INTEGER - Date.now()) / 1000)) {
+    throw new Error("WEBTOOLS_CACHE_TTL exceeds the safe expiration timestamp range.");
+  }
+
+  const maxChars = parseNonNegInt(process.env.WEBTOOLS_MAX_CHARS, 20_000, "WEBTOOLS_MAX_CHARS");
 
   return {
     searchProvider,
@@ -153,6 +168,7 @@ export function loadConfig(): ServerConfig {
     cacheTtl,
     cacheMaxEntries,
     cacheSweepIntervalMs,
+    maxChars,
     serverName: "mcp-web-tools",
     serverVersion: getPackageVersion(),
   };

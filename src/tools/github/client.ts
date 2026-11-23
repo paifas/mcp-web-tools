@@ -52,8 +52,8 @@ export interface RepoContentEntry {
 export interface RepoFileContent {
   name: string;
   path: string;
-  content: string;
-  encoding: "base64" | "none";
+  content?: string;
+  encoding?: string;
   size: number;
 }
 
@@ -150,7 +150,8 @@ export class GithubClient {
   ): Promise<RepoContentEntry[] | RepoFileContent> {
     const query = ref ? `?ref=${encodeURIComponent(ref)}` : "";
     const trimmedPath = path.replace(/^\/+/, "");
-    const url = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${trimmedPath}${query}`;
+    const encodedPath = trimmedPath.split("/").map(encodePathSegment).join("/");
+    const url = `/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}/contents/${encodedPath}${query}`;
     return this.request<RepoContentEntry[] | RepoFileContent>(url, {
       resourceDescription: `${owner}/${repo}/${trimmedPath}${ref ? `@${ref}` : ""}`,
     });
@@ -164,7 +165,7 @@ export class GithubClient {
     const result = await this.listContents(owner, repo, path, ref);
     if (Array.isArray(result)) {
       throw new GithubError(
-        `Path ${owner}/${repo}/${path} is a directory, not a file. Use get_repo_structure to list directory contents.`,
+        `Path ${owner}/${repo}/${path} is a directory, not a file. Use github_get_repo_structure to list directory contents.`,
         400,
       );
     }
@@ -173,8 +174,8 @@ export class GithubClient {
 
   /**
    * Search for code matches inside a repo. Uses GitHub's /search/code endpoint
-   * scoped with `repo:owner/repo`. Note: code search requires the repo to be
-   * indexed by GitHub; small/new repos may return nothing.
+   * scoped with `repo:owner/repo`. Code search requires authentication and the
+   * repo to be indexed by GitHub; small/new repos may return nothing.
    */
   async searchCode(
     owner: string,
@@ -269,6 +270,13 @@ interface RawIssueSearchItem {
 interface RawIssueSearchPayload {
   total_count?: number;
   items?: RawIssueSearchItem[];
+}
+
+function encodePathSegment(segment: string): string {
+  if (segment === "." || segment === "..") {
+    throw new GithubError("Repository paths must not contain '.' or '..' traversal segments.", 400);
+  }
+  return encodeURIComponent(segment);
 }
 
 function clampPerPage(maxResults?: number): number {

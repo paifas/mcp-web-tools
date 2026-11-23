@@ -91,3 +91,79 @@ describe("loadConfig extract provider derivation", () => {
     expect(c.firecrawlApiKey).toBeUndefined();
   });
 });
+
+describe("strict configuration validation", () => {
+  const original = process.env;
+  beforeEach(() => {
+    process.env = {};
+  });
+  afterEach(() => {
+    process.env = original;
+  });
+
+  it.each(["5garbage", "1.5", "-1", "", " 5", "1e2", "9007199254740992"])(
+    "rejects malformed numeric configuration %s",
+    (value) => {
+      for (const name of [
+        "WEBTOOLS_MAX_RESULTS",
+        "WEBTOOLS_CACHE_TTL",
+        "WEBTOOLS_CACHE_MAX_ENTRIES",
+        "WEBTOOLS_CACHE_SWEEP_INTERVAL_MS",
+        "WEBTOOLS_MAX_CHARS",
+      ]) {
+        process.env = { [name]: value };
+        expect(() => loadConfig()).toThrow(name);
+      }
+    },
+  );
+  it("keeps zero-disable cache controls", () => {
+    process.env = { WEBTOOLS_CACHE_TTL: "0", WEBTOOLS_CACHE_MAX_ENTRIES: "0", WEBTOOLS_CACHE_SWEEP_INTERVAL_MS: "0" };
+    expect(loadConfig()).toMatchObject({ cacheTtl: 0, cacheMaxEntries: 0, cacheSweepIntervalMs: 0 });
+  });
+  it("defaults the page character limit to 20000 and accepts 0 to disable it", () => {
+    expect(loadConfig().maxChars).toBe(20_000);
+    process.env = { WEBTOOLS_MAX_CHARS: "0" };
+    expect(loadConfig().maxChars).toBe(0);
+    process.env = { WEBTOOLS_MAX_CHARS: "5000" };
+    expect(loadConfig().maxChars).toBe(5_000);
+  });
+  it.each(["0", "21"])("rejects out-of-range default max results %s", (value) => {
+    process.env.WEBTOOLS_MAX_RESULTS = value;
+    expect(() => loadConfig()).toThrow("WEBTOOLS_MAX_RESULTS");
+  });
+  it("rejects unsupported depth and timer overflow", () => {
+    process.env.WEBTOOLS_SEARCH_DEPTH = "garbage";
+    expect(() => loadConfig()).toThrow("WEBTOOLS_SEARCH_DEPTH");
+    process.env = { WEBTOOLS_CACHE_SWEEP_INTERVAL_MS: "2147483648" };
+    expect(() => loadConfig()).toThrow("timer limit");
+  });
+  it.each(["not-a-url", "ftp://example.com", "https://user:secret@example.com"])(
+    "rejects invalid active base URL %s",
+    (url) => {
+      process.env.SEARXNG_URL = url;
+      expect(() => loadConfig()).toThrow("SEARXNG_URL");
+      process.env = { FIRECRAWL_URL: url };
+      expect(() => loadConfig()).toThrow("FIRECRAWL_URL");
+    },
+  );
+  it("allows local endpoints and ignores unused provider settings", () => {
+    process.env = { SEARXNG_URL: "http://localhost:8080", FIRECRAWL_URL: "http://127.0.0.1:3002" };
+    expect(loadConfig().firecrawlUrl).toBe("http://127.0.0.1:3002");
+    process.env = {
+      WEBTOOLS_SEARCH_PROVIDER: "tavily",
+      TAVILY_API_KEY: "fake",
+      SEARXNG_URL: "invalid",
+      FIRECRAWL_URL: "invalid",
+    };
+    expect(loadConfig().searchProvider).toBe("tavily");
+  });
+  it("does not leak base URL credentials in configuration errors", () => {
+    process.env.FIRECRAWL_URL = "https://user:secret@example.com";
+    expect(() => loadConfig()).toThrow("FIRECRAWL_URL");
+    try {
+      loadConfig();
+    } catch (error) {
+      expect(String(error)).not.toContain("secret");
+    }
+  });
+});

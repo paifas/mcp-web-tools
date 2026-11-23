@@ -11,6 +11,7 @@ export interface SearchResponse {
   query: string;
   answer?: string;
   results: SearchResult[];
+  /** Provider response time in milliseconds. */
   responseTime?: number;
 }
 
@@ -25,6 +26,7 @@ export interface ExtractResult {
 export interface ExtractResponse {
   results: ExtractResult[];
   failedResults: { url: string; error: string }[];
+  /** Provider response time in milliseconds. */
   responseTime?: number;
 }
 

@@ -56,18 +56,30 @@ export function registerReadFileTool(server: McpServer, config: ServerConfig) {
         const [owner, repo] = params.repo.split("/");
         const result = await client.readFile(owner, repo, params.path, params.ref);
 
-        if (result.encoding === "none" || result.size === 0) {
-          return {
-            content: [{ type: "text" as const, text: `(empty file: ${params.repo}/${params.path})` }],
-          };
-        }
-
         if (result.size > MAX_FILE_SIZE_BYTES) {
           return {
             content: [
               {
                 type: "text" as const,
                 text: `File ${params.repo}/${params.path} is ${formatBytes(result.size)}, which exceeds the ${formatBytes(MAX_FILE_SIZE_BYTES)} limit. Use a raw.githubusercontent.com URL or clone the repo.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (result.size === 0) {
+          return {
+            content: [{ type: "text" as const, text: `(empty file: ${params.repo}/${params.path})` }],
+          };
+        }
+
+        if (result.encoding !== "base64" || typeof result.content !== "string" || !result.content.trim()) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `File ${params.repo}/${params.path} has missing or unsupported inline content (encoding: ${result.encoding ?? "missing"}). Use a raw.githubusercontent.com URL or clone the repo.`,
               },
             ],
             isError: true,

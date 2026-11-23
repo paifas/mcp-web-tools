@@ -16,6 +16,7 @@ const searchRepoSchema = {
     .describe("GitHub repository in the form 'owner/repo'"),
   query: z
     .string()
+    .trim()
     .min(1)
     .describe(
       "Search query. GitHub search syntax is supported (e.g. 'auth token', 'bug in login', 'TODO refactor', 'label:bug').",
@@ -82,9 +83,9 @@ export function registerSearchRepoTool(server: McpServer, config: ServerConfig) 
   server.tool(
     "github_search_repo",
     "Search a GitHub repository across code, issues, and pull requests in one call. " +
-      "Code search uses /search/code (requires the repo to be indexed by GitHub). " +
-      "Issues and PRs use /search/issues. Works without a token (anonymous rate limits apply — " +
-      "set GITHUB_TOKEN for higher limits).",
+      "Code search uses /search/code and requires GITHUB_TOKEN and a repo indexed by GitHub. " +
+      "Public-repository issues and PRs use /search/issues and work without a token " +
+      "(anonymous rate limits apply — set GITHUB_TOKEN for higher limits).",
     searchRepoSchema,
     async (params) => {
       try {
@@ -103,8 +104,14 @@ export function registerSearchRepoTool(server: McpServer, config: ServerConfig) 
           wantPRs ? client.searchPullRequests(owner, repo, params.query, { maxResults, state }) : Promise.resolve([]),
         ])) as [Settled<CodeSearchResult>, Settled<IssueSearchResult>, Settled<IssueSearchResult>];
 
+        const requestedResults = [
+          ...(wantCode ? [codeR] : []),
+          ...(wantIssues ? [issuesR] : []),
+          ...(wantPRs ? [prsR] : []),
+        ];
+
         // Rate-limit errors are a hard stop the user needs to see verbatim.
-        for (const r of [codeR, issuesR, prsR]) {
+        for (const r of requestedResults) {
           if (r.status === "rejected" && r.reason instanceof GithubRateLimitError) throw r.reason;
         }
 
@@ -143,7 +150,10 @@ export function registerSearchRepoTool(server: McpServer, config: ServerConfig) 
         const footer = `_${totalShown} result${totalShown === 1 ? "" : "s"} • Searched ${queried}_`;
         const text = [header, "", ...sections, "", footer].join("\n");
 
-        return { content: [{ type: "text" as const, text }] };
+        return {
+          content: [{ type: "text" as const, text }],
+          ...(requestedResults.every((result) => result.status === "rejected") ? { isError: true } : {}),
+        };
       } catch (error) {
         return {
           content: [

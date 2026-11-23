@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import { registerSearchRepoTool } from "./index.js";
 
 // Minimal ServerConfig shape needed by the tool.
@@ -7,30 +8,18 @@ const config = { githubToken: "fake-token" } as unknown as Parameters<typeof reg
 
 // Build a fake McpServer that captures the registered handler.
 function captureTool() {
-  let captured: {
-    schema: Record<string, unknown>;
-    handler: (
-      params: Record<string, unknown>,
-    ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
-  } | null = null;
-  const server = {
-    tool: (
-      _name: string,
-      _desc: string,
-      schema: Record<string, unknown>,
-      handler: typeof captured extends null ? never : (p: Record<string, unknown>) => Promise<unknown>,
-    ) => {
-      captured = {
-        schema,
-        handler: handler as (
-          p: Record<string, unknown>,
-        ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
-      };
-    },
-  } as unknown as McpServer;
-  registerSearchRepoTool(server, config);
-  if (!captured) throw new Error("tool was not registered");
-  return captured;
+  const tool = vi.fn();
+  registerSearchRepoTool({ tool } as unknown as McpServer, config);
+  const [name, description, schema, handler] = tool.mock.calls[0] as [
+    string,
+    string,
+    z.ZodRawShape,
+    (params: Record<string, unknown>) => Promise<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>,
+  ];
+  return { name, description, schema, handler };
 }
 
 describe("github_search_repo handler", () => {
@@ -43,6 +32,7 @@ describe("github_search_repo handler", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   function mockGithub(urlFragment: string, body: unknown, status = 200) {
@@ -127,18 +117,25 @@ describe("github_search_repo handler", () => {
 
     const out = await handler({ repo: "o/r", query: "nothing", kind: "issues" });
     expect(out.content[0].text).toContain("(no results)");
+    expect(out.isError).toBeUndefined();
   });
 
   it("passes state qualifier through to issues/PRs searches", async () => {
     const { handler } = captureTool();
+    mockGithub("/search/code", { total_count: 0, items: [] });
     mockGithub("/search/issues", { total_count: 0, items: [] });
     mockGithub("/search/issues", { total_count: 0, items: [] });
 
-    await handler({ repo: "o/r", query: "bug", kind: "all", state: "open" });
+    const out = await handler({ repo: "o/r", query: "bug", kind: "all", state: "open", maxResults: 3 });
 
     const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(calls).toHaveLength(3);
+    expect(out.isError).toBeUndefined();
+    expect(out.content[0].text).not.toContain("_Error:");
+    expect(calls.every((u) => u.includes("per_page=3"))).toBe(true);
     expect(calls.every((u) => u.includes(encodeURIComponent("state:open")) || u.includes("/search/code"))).toBe(true);
     const issueCalls = calls.filter((u) => u.includes("/search/issues"));
+    expect(issueCalls).toHaveLength(2);
     expect(issueCalls.every((u) => u.includes(encodeURIComponent("state:open")))).toBe(true);
   });
 
@@ -175,5 +172,118 @@ describe("github_search_repo handler", () => {
     expect(out.isError).toBeUndefined();
     expect(text).toContain("### 📁 Code");
     expect(text).toContain("Validation Failed");
+  });
+
+  it.each([
+    { kind: "code", endpoint: "/search/code", status: 401 },
+    { kind: "issues", endpoint: "/search/issues", status: 404 },
+    { kind: "prs", endpoint: "/search/issues", status: 500 },
+  ])("errors when only $kind is requested and fails", async ({ kind, endpoint, status }) => {
+    const { handler } = captureTool();
+    mockGithub(endpoint, { message: "Search unavailable" }, status);
+
+    const out = await handler({ repo: "o/r", query: "x", kind });
+
+    expect(out.isError).toBe(true);
+    expect(out.content[0].text).toContain("_Error:");
+    expect(out.content[0].text).not.toContain("(no results)");
+    expect(out.content[0].text).toContain(`Searched ${kind}`);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks all requested sections failing as an error and preserves their details", async () => {
+    const { handler } = captureTool();
+    mockGithub("/search/code", { message: "Requires authentication" }, 401);
+    mockGithub("/search/issues", { message: "Issues unavailable" }, 500);
+    mockGithub("/search/issues", { message: "Pull requests unavailable" }, 502);
+
+    const out = await handler({ repo: "o/r", query: "x" });
+
+    expect(out.isError).toBe(true);
+    expect(out.content[0].text).toContain("Requires authentication");
+    expect(out.content[0].text).toContain("Issues unavailable");
+    expect(out.content[0].text).toContain("Pull requests unavailable");
+    expect(out.content[0].text).not.toContain("(no results)");
+  });
+
+  it("preserves successful results alongside failed sections", async () => {
+    const { handler } = captureTool();
+    mockGithub("/search/code", { message: "Requires authentication" }, 401);
+    mockGithub("/search/issues", {
+      total_count: 1,
+      items: [
+        {
+          number: 3,
+          title: "Retained issue",
+          html_url: "https://github.com/o/r/issues/3",
+          state: "open",
+          updated_at: "2026-11-01T00:00:00Z",
+          body: "Useful result",
+        },
+      ],
+    });
+    mockGithub("/search/issues", { message: "Pull requests unavailable" }, 500);
+
+    const out = await handler({ repo: "o/r", query: "x" });
+
+    expect(out.isError).toBeUndefined();
+    expect(out.content[0].text).toContain("#3 Retained issue");
+    expect(out.content[0].text).toContain("Requires authentication");
+    expect(out.content[0].text).toContain("Pull requests unavailable");
+    expect(out.content[0].text).toContain("1 result • Searched code, issues, prs");
+  });
+
+  it("counts a successful empty section as success even when the other sections fail", async () => {
+    const { handler } = captureTool();
+    mockGithub("/search/code", { message: "Requires authentication" }, 401);
+    mockGithub("/search/issues", { total_count: 0, items: [] });
+    mockGithub("/search/issues", { message: "Unavailable" }, 500);
+
+    const out = await handler({ repo: "o/r", query: "nothing" });
+
+    expect(out.isError).toBeUndefined();
+    expect(out.content[0].text).toContain("### 🐞 Issues\n\n(no results)");
+  });
+
+  it("keeps a successful all-section zero-result search successful", async () => {
+    const { handler } = captureTool();
+    mockGithub("/search/code", { total_count: 0, items: [] });
+    mockGithub("/search/issues", { total_count: 0, items: [] });
+    mockGithub("/search/issues", { total_count: 0, items: [] });
+
+    const out = await handler({ repo: "o/r", query: "nothing" });
+
+    expect(out.isError).toBeUndefined();
+    expect(out.content[0].text.match(/\(no results\)/g)).toHaveLength(3);
+    expect(out.content[0].text).toContain("0 results • Searched code, issues, prs");
+  });
+
+  it("retains rate-limit hard-stop behavior even when another section succeeds", async () => {
+    const { handler } = captureTool();
+    mockGithub("/search/code", { total_count: 0, items: [] });
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "rate limit" }), {
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1795219200" },
+      }),
+    );
+    mockGithub("/search/issues", { total_count: 0, items: [] });
+
+    const out = await handler({ repo: "o/r", query: "x" });
+
+    expect(out.isError).toBe(true);
+    expect(out.content[0].text).toContain("GitHub API rate limit exceeded");
+    expect(out.content[0].text).toContain("resets at");
+    expect(out.content[0].text).toContain("GITHUB_TOKEN");
+  });
+
+  it("documents code-search authentication and retains the published parameters", () => {
+    const { name, description, schema } = captureTool();
+    expect(name).toBe("github_search_repo");
+    expect(description).toContain("Code search uses /search/code and requires GITHUB_TOKEN");
+    expect(description).toContain("Public-repository issues and PRs");
+    expect(Object.keys(schema)).toEqual(["repo", "query", "kind", "state", "maxResults"]);
+    expect(z.object(schema).parse({ repo: "o/r", query: "  auth  " }).query).toBe("auth");
+    expect(z.object(schema).safeParse({ repo: "o/r", query: "   " }).success).toBe(false);
   });
 });

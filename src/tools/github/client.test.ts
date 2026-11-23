@@ -13,6 +13,7 @@ describe("GithubClient", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   function mockResponse(status: number, body: unknown, headers: Record<string, string> = {}) {

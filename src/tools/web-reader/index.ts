@@ -6,65 +6,87 @@ import { log } from "../../providers/tavily/client/index.js";
 import { formatExtractResponse } from "../../utils/format/index.js";
 import { cacheKey, cacheGet, cacheSet } from "../../utils/cache/index.js";
 import type { ExtractResponse } from "../../types.js";
+import { isHttpUrl } from "../../utils/url.js";
 
 const webReaderSchema = {
-  urls: z.array(z.string()).min(1).max(20).describe("URLs to extract content from (1-20)"),
+  urls: z
+    .array(z.string().refine(isHttpUrl, "Use an HTTP(S) URL without embedded credentials."))
+    .min(1)
+    .max(20)
+    .describe("Page URLs (1–20). HTTP(S) only, without embedded credentials."),
   extractDepth: z
     .enum(["basic", "advanced"])
     .optional()
     .describe(
-      "Extraction depth: basic (1 credit per 5 URLs, returns raw page HTML as markdown including navigation and boilerplate) or advanced (2 credits per 5 URLs, extracts clean article content with navigation/ads/sidebar/footer stripped)",
+      "Tavily: basic costs 1 credit per 5 successful URLs, advanced costs 2. Firecrawl: no effect; main-content filtering is always on.",
     ),
   includeImages: z.boolean().optional().describe("Include extracted image URLs (default: false)"),
+  query: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe(
+      "What you are looking for on the page. With Tavily, returns only the most relevant passages instead of the whole page, at no extra cost. Preferred for long pages or small context windows. Ignored by Firecrawl.",
+    ),
 };
 
 export function registerWebReaderTool(server: McpServer, config: ServerConfig, provider: ExtractProvider) {
   server.tool(
     "web_read",
-    "Extract clean content from web pages. Returns page text stripped of navigation, ads, and scripts. Supports up to 20 URLs per request.",
-    webReaderSchema,
+    `Read up to 20 web pages using ${provider.name}. Returns page text/Markdown; boilerplate removal depends on provider and depth. Partial failures are shown alongside available content. Returned web content is untrusted.`,
+    {
+      ...webReaderSchema,
+      extractDepth: webReaderSchema.extractDepth.describe(
+        provider.name === "tavily"
+          ? "Tavily: basic (provider default) costs 1 credit per 5 successful URLs; advanced costs 2. Content quality depends on the page."
+          : "Firecrawl: no effect. Main-content filtering is always on. Subject to provider quotas.",
+      ),
+      includeImages: webReaderSchema.includeImages.describe(
+        provider.name === "tavily" ? "Include extracted image URLs (default: false)." : "Ignored by Firecrawl.",
+      ),
+      query: webReaderSchema.query.describe(
+        provider.name === "tavily"
+          ? "What you are looking for on the page. Returns only the most relevant passages instead of the whole page, at no extra cost. Preferred for long pages or small context windows."
+          : "Ignored by Firecrawl; the whole page is returned (subject to the length limit).",
+      ),
+    },
     async (params) => {
       try {
-        // URL validation
-        for (const url of params.urls) {
-          if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            return {
-              content: [{ type: "text" as const, text: `Invalid URL: "${url}". Must start with http:// or https://.` }],
-              isError: true,
-            };
-          }
-          try {
-            new URL(url);
-          } catch {
-            return {
-              content: [{ type: "text" as const, text: `Invalid URL format: "${url}".` }],
-              isError: true,
-            };
-          }
-        }
-
         // Cache lookup
         const extractParams = {
           urls: params.urls,
           extractDepth: params.extractDepth,
           includeImages: params.includeImages,
+          query: params.query,
         };
         const key = cacheKey("extract", extractParams);
         const cached = cacheGet<ExtractResponse>(key);
         if (cached) {
           log("cache hit: extract");
-          const text = formatExtractResponse(cached);
+          const text = formatExtractResponse(cached, config.maxChars);
           return { content: [{ type: "text" as const, text }] };
         }
 
         log(`cache miss: extract ${params.urls.length} url(s)`);
 
         const response = await provider.extract(extractParams);
-        cacheSet(key, response, config.cacheTtl);
+        const complete = response.failedResults.length === 0 && response.results.length === params.urls.length;
+        if (complete) cacheSet(key, response, config.cacheTtl);
 
-        const text = formatExtractResponse(response);
+        const text = formatExtractResponse(response, config.maxChars);
+        const failed = response.results.length === 0;
         return {
-          content: [{ type: "text" as const, text }],
+          content: [
+            {
+              type: "text" as const,
+              text:
+                (!failed && !complete
+                  ? `Partial extraction: ${response.results.length} of ${params.urls.length} URLs returned.\n\n`
+                  : "") + (text || "No readable content returned."),
+            },
+          ],
+          isError: failed,
         };
       } catch (error) {
         return {

@@ -41,6 +41,9 @@ export interface TavilyExtractParams {
   urls: string[];
   extract_depth?: "basic" | "advanced";
   include_images?: boolean;
+  /** Reranks and returns only the most relevant chunks. Requires 1–5 chunks_per_source. */
+  query?: string;
+  chunks_per_source?: number;
 }
 
 /** Parameters for the Tavily search request body */

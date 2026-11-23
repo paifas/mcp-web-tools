@@ -38,7 +38,7 @@ export class TavilySearchProvider implements SearchProvider, ExtractProvider {
         snippet: r.content,
         score: r.score,
       })),
-      responseTime: response.response_time,
+      responseTime: response.response_time == null ? undefined : response.response_time * 1000,
     };
   }
 
@@ -47,6 +47,9 @@ export class TavilySearchProvider implements SearchProvider, ExtractProvider {
       urls: params.urls,
       extract_depth: params.extractDepth,
       include_images: params.includeImages,
+      // Only send chunking options together: Tavily applies chunks_per_source
+      // only when a query is present, and a query without it defaults to 3.
+      ...(params.query ? { query: params.query, chunks_per_source: 3 } : {}),
     });
 
     return {
@@ -59,7 +62,7 @@ export class TavilySearchProvider implements SearchProvider, ExtractProvider {
         url: f.url,
         error: f.error,
       })),
-      responseTime: response.response_time,
+      responseTime: response.response_time == null ? undefined : response.response_time * 1000,
     };
   }
 

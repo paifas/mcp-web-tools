@@ -5,6 +5,12 @@ export interface ExtractParams {
   urls: string[];
   extractDepth?: "basic" | "advanced";
   includeImages?: boolean;
+  /**
+   * What the caller is looking for on the page. Providers that support
+   * relevance ranking (Tavily) return a few matching passages instead of the
+   * whole page, at no extra cost. Others ignore it.
+   */
+  query?: string;
 }
 
 /**

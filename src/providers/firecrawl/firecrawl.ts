@@ -1,37 +1,79 @@
+import { z } from "zod";
 import type { ExtractProvider, ExtractParams } from "../extract-provider.js";
 import type { ExtractResponse, ExtractResult } from "../../types.js";
 import { chunk, sleep } from "../utils.js";
 
-interface FirecrawlScrapeData {
-  markdown?: string;
-  html?: string;
-  metadata?: {
-    title?: string;
-    description?: string;
-    sourceURL?: string;
-    statusCode?: number;
-  };
-}
+const scrapeResponseSchema = z.object({
+  success: z.literal(true),
+  data: z.object({
+    markdown: z.string(),
+    metadata: z.object({ sourceURL: z.string().optional() }).optional(),
+  }),
+});
 
-interface FirecrawlScrapeResponse {
-  success: boolean;
-  data?: FirecrawlScrapeData;
-  error?: string;
-}
-
-const MAX_RETRIES = 3;
+const MAX_ATTEMPTS = 3;
 const SCRAPE_TIMEOUT_MS = 30_000;
+const RETRY_FALLBACK_MS = 5_000;
+const RETRY_WAIT_BUDGET_MS = 15_000;
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function retryWaitMs(header: string | null): number {
+  const value = header?.trim();
+  if (!value) return RETRY_FALLBACK_MS;
+  if (/^\d+(?:\.\d+)?$/.test(value)) {
+    // Round up so a fractional millisecond never triggers an early retry.
+    return Math.ceil(Number(value) * 1000);
+  }
+  const timestamp = Date.parse(value);
+  if (Number.isFinite(timestamp)) {
+    const date = new Date(timestamp);
+    const canonical = date.toUTCString();
+    const [weekday, day, month, year, time] = canonical.split(" ");
+    // Round-trip the three HTTP date forms: Date.parse alone accepts invalid
+    // days, overflowing times, and strings that are not HTTP dates at all.
+    const httpDates = [
+      canonical,
+      `${WEEKDAYS[date.getUTCDay()]}, ${day}-${month}-${year.slice(-2)} ${time} GMT`,
+      `${weekday.slice(0, 3)} ${month} ${String(date.getUTCDate()).padStart(2, " ")} ${time} ${year}`,
+    ];
+    if (httpDates.includes(value)) return Math.max(0, timestamp - Date.now());
+  }
+  return RETRY_FALLBACK_MS;
+}
+
+function providerErrorDetails(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const fields = payload as Record<string, unknown>;
+  const details = [fields.error, fields.message, fields.details]
+    .map((value) =>
+      typeof value === "string"
+        ? value.trim()
+        : typeof value === "object" && value !== null
+          ? JSON.stringify(value)
+          : "",
+    )
+    .filter(Boolean);
+  return details.length > 0 ? details.join("; ") : undefined;
+}
+
+async function readErrorDetails(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  if (!text.trim()) return response.statusText;
+  try {
+    return providerErrorDetails(JSON.parse(text)) ?? text;
+  } catch {
+    return text;
+  }
+}
 
 /**
  * Firecrawl extract provider.
  *
- * Three modes, all reached by env config rather than code branches:
- *  - keyless hosted (default): no Authorization header, IP-bucketed free tier
- *    (~1000 credits/month, 10/min).
- *  - keyed hosted: FIRECRAWL_API_KEY set, higher limits.
- *  - self-hosted: FIRECRAWL_URL pointed at a self-hosted instance; key ignored.
+ * Supports hosted and custom v2-compatible endpoints. Authentication is optional;
+ * when configured, the bearer key is sent to the selected endpoint.
  *
- * Uses /v1/scrape in a bounded-concurrency loop rather than /v1/batch/scrape
+ * Uses /v2/scrape in a bounded-concurrency loop rather than /v2/batch/scrape
  * (which is async/job-ID-based — wrong shape for a synchronous MCP tool call).
  */
 export class FirecrawlProvider implements ExtractProvider {
@@ -43,7 +85,7 @@ export class FirecrawlProvider implements ExtractProvider {
   ) {}
 
   async extract(params: ExtractParams): Promise<ExtractResponse> {
-    const endpoint = `${this.baseUrl.replace(/\/$/, "")}/v1/scrape`;
+    const endpoint = `${this.baseUrl.replace(/\/$/, "")}/v2/scrape`;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
 
@@ -75,11 +117,14 @@ export class FirecrawlProvider implements ExtractProvider {
     const body = {
       url,
       formats: ["markdown"],
-      onlyMainContent: params.extractDepth === "advanced",
+      // Main-content filtering is a deterministic HTML pass (no LLM, no extra
+      // cost) that drops nav, headers and footers. It is on for every depth:
+      // boilerplate is never what the caller asked to read.
+      onlyMainContent: true,
     };
 
-    let lastError = "";
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    let remainingWaitMs = RETRY_WAIT_BUDGET_MS;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const res = await fetch(endpoint, {
         method: "POST",
         headers,
@@ -88,36 +133,46 @@ export class FirecrawlProvider implements ExtractProvider {
       });
 
       if (res.status === 429) {
-        if (attempt < MAX_RETRIES - 1) {
-          const retryAfterHeader = res.headers.get("retry-after");
-          const retryAfter = Number(retryAfterHeader);
-          const waitMs = (Number.isFinite(retryAfter) ? retryAfter : 5) * 1000;
-          await sleep(waitMs);
-          continue;
+        const details = await readErrorDetails(res);
+        const message = `Firecrawl rate limit (429)${details ? `: ${details}` : ""}`;
+        if (attempt === MAX_ATTEMPTS) {
+          throw new Error(
+            `${message}. Exhausted after ${MAX_ATTEMPTS} attempts. Try again later or check your Firecrawl service limits.`,
+          );
         }
-        throw new Error(
-          "Firecrawl rate limit (429) exhausted after retries. " +
-            "You may be on the keyless free tier (1000 credits/month, 10/min). " +
-            "Set FIRECRAWL_API_KEY for higher limits, or self-host Firecrawl.",
-        );
+        const waitMs = retryWaitMs(res.headers.get("retry-after"));
+        if (waitMs > remainingWaitMs) {
+          throw new Error(
+            `${message}. Retry-After requires ${waitMs}ms, exceeding the remaining ${remainingWaitMs}ms retry wait budget. Try again later.`,
+          );
+        }
+        remainingWaitMs -= waitMs;
+        if (waitMs > 0) await sleep(waitMs);
+        continue;
       }
 
       if (!res.ok) {
-        const errBody = ((await res.json().catch(() => ({}))) as { error?: string }).error;
-        lastError = `Firecrawl error (${res.status}): ${errBody ?? res.statusText}`;
         // Non-429 errors are not retryable.
-        throw new Error(lastError);
+        throw new Error(`Firecrawl error (${res.status}): ${await readErrorDetails(res)}`);
       }
 
-      const data = (await res.json()) as FirecrawlScrapeResponse;
-      if (!data.success) {
-        throw new Error(`Firecrawl scrape unsuccessful: ${JSON.stringify(data.data ?? {})}`);
+      const payload: unknown = await res.json().catch(() => {
+        throw new Error("Invalid Firecrawl response: expected JSON.");
+      });
+      if (typeof payload === "object" && payload !== null && "success" in payload && payload.success === false) {
+        throw new Error(`Firecrawl scrape unsuccessful: ${providerErrorDetails(payload) ?? "success was false"}`);
+      }
+      const parsed = scrapeResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "response"}: ${issue.message}`);
+        const details = providerErrorDetails(payload);
+        throw new Error(`Invalid Firecrawl response: ${issues.join("; ")}${details ? `; ${details}` : ""}`);
       }
       return {
-        url: data.data?.metadata?.sourceURL ?? url,
-        content: data.data?.markdown ?? "",
+        url: parsed.data.data.metadata?.sourceURL ?? url,
+        content: parsed.data.data.markdown,
       };
     }
-    throw new Error(lastError || "Firecrawl scrape failed (unreachable)");
+    throw new Error("Firecrawl scrape failed (unreachable)");
   }
 }

@@ -34,16 +34,40 @@ export function formatSearchResponse(response: SearchResponse): string {
 }
 
 /**
- * Formats an ExtractResponse into a markdown string suitable for MCP tool output.
+ * Truncate one page's content to `maxChars`, cutting at the last paragraph break
+ * before the limit when there is one. Appends a notice so the model knows content
+ * is missing, unlike client-side truncation. `maxChars` of 0 disables truncation.
  */
-export function formatExtractResponse(response: ExtractResponse): string {
+export function truncateContent(content: string, maxChars: number): string {
+  if (maxChars <= 0 || content.length <= maxChars) return content;
+  const window = content.slice(0, maxChars);
+  const paragraphBreak = window.lastIndexOf("\n\n");
+  // Use the paragraph break only if it leaves a reasonably sized prefix; otherwise
+  // a single huge paragraph would collapse to almost nothing.
+  const cut = paragraphBreak >= Math.floor(maxChars * 0.5) ? paragraphBreak : maxChars;
+  const kept = content.slice(0, cut).replace(/\s+$/, "");
+  return `${kept}\n\n[truncated: showing ${kept.length} of ${content.length} characters]`;
+}
+
+/**
+ * Formats an ExtractResponse into a markdown string suitable for MCP tool output.
+ * `maxChars` limits each page's content (0 disables).
+ */
+export function formatExtractResponse(response: ExtractResponse, maxChars = 0): string {
   const parts: string[] = [];
 
   for (const result of response.results) {
     parts.push(`## ${result.url}`);
     parts.push("");
-    parts.push(result.content);
+    parts.push(truncateContent(result.content, maxChars));
     parts.push("");
+    if (result.images?.length) {
+      parts.push("### Images");
+      for (const image of result.images) {
+        parts.push(`- ${image}`);
+      }
+      parts.push("");
+    }
   }
 
   if (response.failedResults.length > 0) {

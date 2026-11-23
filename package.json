@@ -1,6 +1,6 @@
 {
   "name": "mcp-web-tools",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "MCP server providing web search tools for AI assistants",
   "type": "module",
   "main": "build/index.js",
@@ -10,7 +10,15 @@
   "files": [
     "build",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "docs/clients.md",
+    "docs/configuration.md",
+    "docs/self-hosting.md",
+    "docs/tools.md",
+    "docs/troubleshooting.md"
   ],
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
@@ -18,12 +26,16 @@
     "start": "node build/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "prepublishOnly": "npm audit && npm run build"
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" vitest.config.ts",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" vitest.config.ts",
+    "smoke": "node scripts/smoke.mjs",
+    "check": "npm run typecheck && npm test && npm run lint && npm run format:check && npm run build && npm run smoke",
+    "check:release": "npm run check && npm audit",
+    "prepublishOnly": "npm run check:release"
   },
   "repository": {
     "type": "git",
@@ -53,22 +65,22 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.13.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^3.25.76"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.5.2",
-    "@vitest/coverage-v8": "^4.1.4",
-    "eslint": "^10.2.0",
+    "@types/node": "^22.20.5",
+    "@vitest/coverage-v8": "^5.1.1",
+    "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.8.1",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.1",
-    "vitest": "^4.1.4"
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^5.1.1"
   }
 }
